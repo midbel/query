@@ -35,7 +35,7 @@ func (p *Parser) Parse() (Query, error) {
 func (p *Parser) parse() (Query, error) {
 	var list []Query
 	for !p.done() {
-		curr, err := p.parseFilter()
+		curr, err := p.parseQuery()
 		if err != nil {
 			return nil, err
 		}
@@ -60,32 +60,108 @@ func (p *Parser) parse() (Query, error) {
 	return &a, nil
 }
 
-func (p *Parser) parseFilter() (Query, error) {
+func (p *Parser) parseQuery() (Query, error) {
 	var (
 		curr Query
 		err  error
 	)
-	if err := p.expect(Dot, "parser: expected '.'"); err != nil {
-		return nil, err
+	switch p.curr.Type {
+	default:
+		return nil, fmt.Errorf("query: expected '.', '[' or '{'")
+	case Dot:
+		p.next()
+	case Lsquare:
+		return nil, p.parseMakeArray()
+	case Lcurly:
+		return nil, p.parseMakeObject()
 	}
-	p.next()
 	switch p.curr.Type {
 	case Literal:
 		curr, err = p.parseIdent()
 	case Lsquare:
 		curr, err = p.parseArray()
 	default:
-		return nil, fmt.Errorf("expected '.' or '('")
+		return nil, fmt.Errorf("query: expected '.' or '('")
 	}
 	if err != nil {
 		return nil, err
 	}
 	switch p.curr.Type {
-	case Eof, Comma:
+	case Eof, Comma, Rsquare, Rcurly:
 	default:
-		return nil, fmt.Errorf("expected ',' or end of input")
+		return nil, fmt.Errorf("query: expected ',' or end of input")
 	}
 	return curr, err
+}
+
+func (p *Parser) parseMakeArray() error {
+	p.next()
+	for !p.done() && !p.is(Rsquare) {
+		_, err := p.parseQuery()
+		if err != nil {
+			return err
+		}
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rsquare) {
+				return fmt.Errorf("array constructor: expected query after comma")
+			}
+		case Rsquare:
+		default:
+			return fmt.Errorf("array constructor: expected ',' or '}'")
+		}
+	}
+	if err := p.expect(Rsquare, "array constructor: expected ']' at end"); err != nil {
+		return err
+	}
+	p.next()
+	return nil
+}
+
+func (p *Parser) parseMakeObject() error {
+	p.next()
+	for !p.done() && !p.is(Rcurly) {
+		var ident string
+		switch p.curr.Type {
+		case Dot:
+			ident = p.peek.Literal
+		case Literal:
+			ident = p.curr.Literal
+			p.next()
+			if err := p.expect(Colon, "object constructor: expect ':' after literal"); err != nil {
+				return err
+			}
+			p.next()
+		default:
+			return fmt.Errorf("object constructor: expected '.' or literal")
+		}
+		_, err := p.parseQuery()
+		if err != nil {
+			return err
+		}
+		_ = ident
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rcurly) {
+				return fmt.Errorf("object constructor: expected query after comma")
+			}
+		case Rcurly:
+		default:
+			return fmt.Errorf("object constructor: expected ',' or '}'")
+		}
+	}
+	if err := p.expect(Rcurly, "object constructor: expected '}' at end"); err != nil {
+		return err
+	}
+	p.next()
+	switch p.curr.Type {
+	case Comma, Eof:
+	default:
+		return fmt.Errorf("object constructor: unexpected character %s", p.curr)
+	}
+	return nil
 }
 
 func (p *Parser) parseIdent() (Query, error) {
@@ -97,10 +173,10 @@ func (p *Parser) parseIdent() (Query, error) {
 	p.next()
 	switch p.curr.Type {
 	case Dot:
-		id.next, err = p.parseFilter()
+		id.next, err = p.parseQuery()
 	case Lsquare:
 		id.next, err = p.parseArray()
-	case Comma, Eof:
+	case Comma, Eof, Rcurly, Rsquare:
 	default:
 		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
 	}
@@ -140,7 +216,7 @@ func (p *Parser) parseArray() (Query, error) {
 	p.next()
 	switch p.curr.Type {
 	case Dot:
-		arr.next, err = p.parseFilter()
+		arr.next, err = p.parseQuery()
 	case Comma, Eof:
 	default:
 		err = fmt.Errorf("array: unexpected character %s", p.curr)
@@ -178,6 +254,9 @@ const (
 	Rparen
 	Lsquare
 	Rsquare
+	Lcurly
+	Rcurly
+	Colon
 	Invalid
 )
 
@@ -202,6 +281,12 @@ func (t Token) String() string {
 		return "<lsquare>"
 	case Rsquare:
 		return "<rsquare>"
+	case Lcurly:
+		return "<lcurly>"
+	case Rcurly:
+		return "<rcurly>"
+	case Colon:
+		return "<colon>"
 	case Invalid:
 		if t.Literal != "" {
 			return fmt.Sprintf("invalid(%s)", t.Literal)
@@ -291,6 +376,12 @@ func (s *Scanner) scanNumber(tok *Token) {
 
 func (s *Scanner) scanDelim(tok *Token) {
 	switch s.char {
+	case '{':
+		tok.Type = Lcurly
+	case '}':
+		tok.Type = Rcurly
+	case ':':
+		tok.Type = Colon
 	case ',':
 		tok.Type = Comma
 	case '.':
@@ -370,14 +461,14 @@ func isQuote(r rune) bool {
 	return r == '\'' || r == '"'
 }
 
-func isArray(r rune) bool {
-	return r == '['
+func isGroup(r rune) bool {
+	return r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}'
 }
 
-func isGroup(r rune) bool {
-	return r == '('
+func isPunct(r rune) bool {
+	return r == '.' || r == ',' || r == ':'
 }
 
 func isDelim(r rune) bool {
-	return r == ']' || r == ')' || r == ',' || r == '.' || isGroup(r) || isArray(r)
+	return isGroup(r) || isPunct(r)
 }

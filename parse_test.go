@@ -6,19 +6,24 @@ import (
 
 func TestParse(t *testing.T) {
 	data := []string{
-		".",
-		".ident",
-		".\"ident\"",
-		".'ident'",
-		".'ident'[]",
-		".'parent'.\"child\"",
-		".first.last",
-		".first,.last",
-		".[]",
-		".[0, 1, 2]",
-		".array[]",
-		".array[].ident",
-		".",
+		`.`,
+		`.ident`,
+		`."ident"`,
+		`.'ident'`,
+		`.'ident'[]`,
+		`.'parent'."child"`,
+		`.first.last`,
+		`.first,.last`,
+		`.[]`,
+		`.[0, 1, 2]`,
+		`.array[]`,
+		`.array[].ident`,
+		`.`,
+		`{}`,
+		`{ident: .ident}`,
+		`{.ident}`,
+		`[]`,
+		`[.ident]`,
 	}
 	for _, d := range data {
 		_, err := Parse(d)
@@ -30,18 +35,18 @@ func TestParse(t *testing.T) {
 
 func TestParse_Error(t *testing.T) {
 	data := []string{
-		"ident",
-		".ident.",
-		"._ident",
-		".1ident",
-		".first,.last,",
-		".'first",
-		".array[1, 2",
-		".array[",
-		".array[1 2",
-		".[",
-		".]",
-		".array[\"foobar\"]",
+		`ident`,
+		`.ident.`,
+		`._ident`,
+		`.1ident`,
+		`.first,.last,`,
+		`.'first`,
+		`.array[1, 2`,
+		`.array[`,
+		`.array[1 2`,
+		`.[`,
+		`.]`,
+		`.array["foobar"]`,
 	}
 	for _, d := range data {
 		_, err := Parse(d)
