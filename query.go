@@ -44,28 +44,6 @@ func (a *any) Next(ident string) (Query, error) {
 	return nil, ErrSkip
 }
 
-type group struct {
-	list []Query
-	next Query
-}
-
-func (g *group) Next(ident string) (Query, error) {
-	for _, f := range g.list {
-		n, err := f.Next(ident)
-		if err == nil {
-			if n != nil {
-				c := chain{
-					curr: n,
-					next: g.next,
-				}
-				return &c, nil
-			}
-			return n, nil
-		}
-	}
-	return nil, ErrSkip
-}
-
 type ident struct {
 	ident string
 	next  Query
@@ -76,23 +54,6 @@ func (i *ident) Next(ident string) (Query, error) {
 		return next(i.next), nil
 	}
 	return nil, ErrSkip
-}
-
-type chain struct {
-	curr Query
-	next Query
-}
-
-func (c *chain) Next(ident string) (Query, error) {
-	n, err := c.curr.Next(ident)
-	if err == nil {
-		if n == nil {
-			return c.next, nil
-		}
-		c.curr = n
-		return c, nil
-	}
-	return nil, err
 }
 
 func next(in Query) Query {
