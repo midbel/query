@@ -10,12 +10,14 @@ func TestParse(t *testing.T) {
 		".ident",
 		".\"ident\"",
 		".'ident'",
+		".'ident'[]",
+		".'parent'.\"child\"",
 		".first.last",
 		".first,.last",
 		".[]",
 		".[0, 1, 2]",
 		".array[]",
-		"(.first,.last).ident",
+		".(first,last).ident",
 	}
 	for _, d := range data {
 		_, err := Parse(d)
@@ -32,6 +34,12 @@ func TestParse_Error(t *testing.T) {
 		"._ident",
 		".1ident",
 		".first,.last,",
+		".'first",
+		".(first,last",
+		".array[1, 2",
+		".array[",
+		".array[1 2",
+		".array[\"foobar\"]",
 	}
 	for _, d := range data {
 		_, err := Parse(d)

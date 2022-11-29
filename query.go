@@ -7,11 +7,19 @@ func (a all) Next(string) (Filter, error) {
 }
 
 type array struct {
-	index []int
+	index []string
 	next  Filter
 }
 
-func (a *array) Next() (Filter, error) {
+func (a *array) Next(ident string) (Filter, error) {
+	if len(a.index) == 0 {
+		return next(a.next), nil
+	}
+	for i := range a.index {
+		if a.index[i] == ident {
+			return next(a.next), nil
+		}
+	}
 	return nil, ErrSkip
 }
 
