@@ -44,7 +44,8 @@ func (r *reader) Read(q Query) ([]string, error) {
 		_, err := r.identifier()
 		return nil, err
 	case jsonDigit(c):
-		return nil, r.number()
+		_, err := r.number()
+		return nil, err
 	case jsonArray(c):
 		return r.array(q)
 	case jsonObject(c):
@@ -232,7 +233,82 @@ func (r *reader) identifier() (string, error) {
 	}
 }
 
-func (r *reader) number() error {
+func (r *reader) number() (string, error) {
+	var (
+		buf bytes.Buffer
+		err error
+	)
+	r.unread()
+	if c, _ := r.read(); c == '0' {
+		buf.WriteRune(c)
+		if c, _ = r.read(); c == '.' {
+			err := r.fraction(&buf)
+			return buf.String(), err
+		}
+		return "", fmt.Errorf("expected fraction after 0")
+	}
+	r.unread()
+	for {
+		c, _ := r.read()
+		if !jsonDigit(c) {
+			break
+		}
+		buf.WriteRune(c)
+	}
+	r.unread()
+	switch c, _ := r.read(); c {
+	case '.':
+		err = r.fraction(&buf)
+	case 'e', 'E':
+		err = r.exponent(&buf, c)
+	default:
+		r.unread()
+	}
+	return buf.String(), err
+}
+
+func (r *reader) fraction(buf *bytes.Buffer) error {
+	if c, _ := r.read(); !jsonDigit(c) {
+		return fmt.Errorf("expected digit after '.'")
+	}
+	r.unread()
+
+	defer r.unread()
+	buf.WriteRune('.')
+	for {
+		c, _ := r.read()
+		if !jsonDigit(c) {
+			break
+		}
+		buf.WriteRune(c)
+	}
+	r.unread()
+	if c, _ := r.read(); c == 'e' || c == 'E' {
+		return r.exponent(buf, c)
+	}
+	return nil
+}
+
+func (r *reader) exponent(buf *bytes.Buffer, exp rune) error {
+	defer r.unread()
+
+	buf.WriteRune(exp)
+	c, _ := r.read()
+	if c == '-' || c == '+' {
+		buf.WriteRune(c)
+		c, _ = r.read()
+	}
+	if !jsonDigit(c) || c == '0' {
+		return fmt.Errorf("expected digit (different of 0) after exponent")
+	}
+	buf.WriteRune(c)
+	for {
+		c, _ := r.read()
+		if !jsonDigit(c) {
+			break
+		}
+		buf.WriteRune(c)
+	}
 	return nil
 }
 

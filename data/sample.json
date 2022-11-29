@@ -10,13 +10,17 @@
 			"name": "foo",
 			"ip": "10.0.1.1",
 			"prime": true,
-			"mail": "support@foobar.org"
+			"mail": "support@foobar.org",
+			"priority": 100,
+			"runlevel": 3
 		},
 		{
 			"name": "bar",
 			"ip": "10.0.100.1",
 			"prime": false,
-			"mail": "support@foobar.org"
+			"mail": "support@foobar.org",
+			"priority": 500,
+			"runlevel": 5
 		}
 	],
 	"database": {
