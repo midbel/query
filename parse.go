@@ -72,8 +72,6 @@ func (p *Parser) parseFilter() (Query, error) {
 	switch p.curr.Type {
 	case Literal:
 		curr, err = p.parseIdent()
-	case Lparen:
-		curr, err = p.parseGroup()
 	case Lsquare:
 		curr, err = p.parseArray()
 	default:
@@ -83,7 +81,7 @@ func (p *Parser) parseFilter() (Query, error) {
 		return nil, err
 	}
 	switch p.curr.Type {
-	case Eof, Rparen, Comma:
+	case Eof, Comma:
 	default:
 		return nil, fmt.Errorf("expected ',' or end of input")
 	}
@@ -102,7 +100,7 @@ func (p *Parser) parseIdent() (Query, error) {
 		id.next, err = p.parseFilter()
 	case Lsquare:
 		id.next, err = p.parseArray()
-	case Comma, Eof, Rparen:
+	case Comma, Eof:
 	default:
 		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
 	}
@@ -143,50 +141,11 @@ func (p *Parser) parseArray() (Query, error) {
 	switch p.curr.Type {
 	case Dot:
 		arr.next, err = p.parseFilter()
-	case Comma, Eof, Rparen:
+	case Comma, Eof:
 	default:
 		err = fmt.Errorf("array: unexpected character %s", p.curr)
 	}
 	return &arr, err
-}
-
-func (p *Parser) parseGroup() (Query, error) {
-	p.next()
-	var (
-		grp group
-		err error
-	)
-	for !p.done() && !p.is(Rparen) {
-		curr, err := p.parseFilter()
-		if err != nil {
-			return nil, err
-		}
-		grp.list = append(grp.list, curr)
-		switch p.curr.Type {
-		case Comma:
-			p.next()
-			if p.is(Rparen) {
-				return nil, fmt.Errorf("group: expected query after ','")
-			}
-		case Rparen:
-		default:
-			return nil, fmt.Errorf("group: expected ',' or ')")
-		}
-	}
-	if err := p.expect(Rparen, "group: expected ')'"); err != nil {
-		return nil, err
-	}
-	p.next()
-	switch p.curr.Type {
-	case Dot:
-		grp.next, err = p.parseFilter()
-	case Lsquare:
-		grp.next, err = p.parseArray()
-	case Comma, Eof:
-	default:
-		err = fmt.Errorf("group: unexpected character %s", p.curr)
-	}
-	return &grp, err
 }
 
 func (p *Parser) expect(kind rune, msg string) error {

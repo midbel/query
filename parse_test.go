@@ -18,8 +18,6 @@ func TestParse(t *testing.T) {
 		".[0, 1, 2]",
 		".array[]",
 		".array[].ident",
-		".(.first.second,.last).next",
-		".(.first,.last)[].next",
 		".",
 	}
 	for _, d := range data {
@@ -38,12 +36,10 @@ func TestParse_Error(t *testing.T) {
 		".1ident",
 		".first,.last,",
 		".'first",
-		".(first,last",
 		".array[1, 2",
 		".array[",
 		".array[1 2",
 		".[",
-		".)",
 		".]",
 		".array[\"foobar\"]",
 	}
