@@ -23,7 +23,5 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	for i := range rs {
-		fmt.Println(rs[i])
-	}
+	fmt.Println(rs)
 }

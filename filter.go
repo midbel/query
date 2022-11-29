@@ -9,7 +9,7 @@ import (
 	"strconv"
 )
 
-func Filter(r io.Reader, query string) ([]string, error) {
+func Filter(r io.Reader, query string) (interface{}, error) {
 	q, err := Parse(query)
 	if err != nil {
 		return nil, err
@@ -31,21 +31,18 @@ func prepare(r io.Reader) *reader {
 	}
 }
 
-func (r *reader) Read(q Query) ([]string, error) {
+func (r *reader) Read(q Query) (interface{}, error) {
 	c, err := r.read()
 	if err != nil {
 		return nil, err
 	}
 	switch {
 	case jsonQuote(c):
-		_, err := r.literal()
-		return nil, err
+		return r.literal()
 	case jsonIdent(c):
-		_, err := r.identifier()
-		return nil, err
+		return r.identifier()
 	case jsonDigit(c):
-		_, err := r.number()
-		return nil, err
+		return r.number()
 	case jsonArray(c):
 		return r.array(q)
 	case jsonObject(c):
@@ -55,21 +52,27 @@ func (r *reader) Read(q Query) ([]string, error) {
 	}
 }
 
-func (r *reader) object(q Query) ([]string, error) {
+func (r *reader) object(q Query) (interface{}, error) {
 	r.enter()
 	defer r.leave()
 
-	var rs []string
+	var (
+		obj = make(map[string]interface{})
+		arr []interface{}
+	)
 	for {
 		key, err := r.key()
 		if err != nil {
 			return nil, err
 		}
-		ns, err := r.traverse(q, key)
+		v, err := r.traverse(q, key)
 		if err != nil {
 			return nil, err
 		}
-		rs = append(rs, ns...)
+		if v != nil {
+			obj[key] = v
+			arr = append(arr, v)
+		}
 		if err := r.endObject(); err != nil {
 			if errors.Is(err, errDone) {
 				break
@@ -77,7 +80,10 @@ func (r *reader) object(q Query) ([]string, error) {
 			return nil, err
 		}
 	}
-	return rs, nil
+	if q == KeepAll {
+		return obj, nil
+	}
+	return firstOrAll(arr), nil
 }
 
 func (r *reader) endObject() error {
@@ -109,14 +115,16 @@ func (r *reader) key() (string, error) {
 	return key, nil
 }
 
-func (r *reader) array(q Query) ([]string, error) {
-	var rs []string
+func (r *reader) array(q Query) (interface{}, error) {
+	var arr []interface{}
 	for i := 0; ; i++ {
-		ns, err := r.traverse(q, strconv.Itoa(i))
+		v, err := r.traverse(q, strconv.Itoa(i))
 		if err != nil {
 			return nil, err
 		}
-		rs = append(rs, ns...)
+		if v != nil {
+			arr = append(arr, v)
+		}
 
 		if err := r.endArray(); err != nil {
 			if errors.Is(err, errDone) {
@@ -125,7 +133,7 @@ func (r *reader) array(q Query) ([]string, error) {
 			return nil, err
 		}
 	}
-	return rs, nil
+	return firstOrAll(arr), nil
 }
 
 func (r *reader) endArray() error {
@@ -142,28 +150,16 @@ func (r *reader) endArray() error {
 	return nil
 }
 
-func (r *reader) traverse(q Query, key string) ([]string, error) {
+func (r *reader) traverse(q Query, key string) (interface{}, error) {
 	next, err := q.Next(key)
 	if err != nil {
 		_, err = r.Read(KeepAll)
 		return nil, err
 	}
-	var wrapped bool
-	if wrapped = next == nil; wrapped {
-		r.wrap()
+	if next == nil {
 		next = KeepAll
 	}
-	ns, err := r.Read(next)
-	if err != nil {
-		return nil, err
-	}
-	if wrapped {
-		str := r.unwrap()
-		if str != "" {
-			ns = append(ns, str)
-		}
-	}
-	return ns, nil
+	return r.Read(next)
 }
 
 func (r *reader) literal() (string, error) {
@@ -207,7 +203,7 @@ func (r *reader) escape(buf *bytes.Buffer) error {
 	return nil
 }
 
-func (r *reader) identifier() (string, error) {
+func (r *reader) identifier() (interface{}, error) {
 	defer r.unread()
 	r.unread()
 
@@ -218,7 +214,7 @@ func (r *reader) identifier() (string, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return "", err
+			return nil, err
 		}
 		if !jsonLetter(c) {
 			break
@@ -226,14 +222,18 @@ func (r *reader) identifier() (string, error) {
 		buf.WriteRune(c)
 	}
 	switch ident := buf.String(); ident {
-	case "true", "false", "null":
-		return ident, nil
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	case "null":
+		return nil, nil
 	default:
-		return "", fmt.Errorf("%s: identifier not recognized", ident)
+		return nil, fmt.Errorf("%s: identifier not recognized", ident)
 	}
 }
 
-func (r *reader) number() (string, error) {
+func (r *reader) number() (float64, error) {
 	var (
 		buf bytes.Buffer
 		err error
@@ -243,9 +243,12 @@ func (r *reader) number() (string, error) {
 		buf.WriteRune(c)
 		if c, _ = r.read(); c == '.' {
 			err := r.fraction(&buf)
-			return buf.String(), err
+			if err != nil {
+				return 0, err
+			}
+			return getFloat(buf.String())
 		}
-		return "", fmt.Errorf("expected fraction after 0")
+		return 0, fmt.Errorf("expected fraction after 0")
 	}
 	r.unread()
 	for {
@@ -264,7 +267,10 @@ func (r *reader) number() (string, error) {
 	default:
 		r.unread()
 	}
-	return buf.String(), err
+	if err != nil {
+		return 0, err
+	}
+	return getFloat(buf.String())
 }
 
 func (r *reader) fraction(buf *bytes.Buffer) error {
@@ -332,55 +338,11 @@ func (r *reader) unread() {
 	r.inner.UnreadRune()
 }
 
-func (r *reader) wrap() {
-	r.inner = wrap(r.inner)
-}
-
-func (r *reader) unwrap() string {
-	w, ok := r.inner.(*writer)
-	if ok {
-		r.inner = w.Unwrap()
-		return w.String()
+func firstOrAll(arr []interface{}) interface{} {
+	if len(arr) == 1 {
+		return arr[0]
 	}
-	return ""
-}
-
-type writer struct {
-	io.RuneScanner
-	buf bytes.Buffer
-}
-
-func wrap(rs io.RuneScanner) io.RuneScanner {
-	if _, ok := rs.(*writer); ok {
-		return rs
-	}
-	return &writer{
-		RuneScanner: rs,
-	}
-}
-
-func (w *writer) ReadRune() (rune, int, error) {
-	c, z, err := w.RuneScanner.ReadRune()
-	if err == nil && !jsonBlank(c) {
-		w.buf.WriteRune(c)
-	}
-	return c, z, err
-}
-
-func (w *writer) UnreadRune() error {
-	err := w.RuneScanner.UnreadRune()
-	if err == nil {
-		w.buf.Truncate(w.buf.Len() - 1)
-	}
-	return err
-}
-
-func (w *writer) Unwrap() io.RuneScanner {
-	return w.RuneScanner
-}
-
-func (w *writer) String() string {
-	return w.buf.String()
+	return arr
 }
 
 func jsonBlank(r rune) bool {
