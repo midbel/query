@@ -56,10 +56,12 @@ func (r *reader) object(q Query) (interface{}, error) {
 	r.enter()
 	defer r.leave()
 
-	var (
-		obj = make(map[string]interface{})
-		arr []interface{}
-	)
+	var list collector
+	if q == KeepAll {
+		list = createObject()
+	} else {
+		list = createArray()
+	}
 	for {
 		key, err := r.key()
 		if err != nil {
@@ -69,10 +71,8 @@ func (r *reader) object(q Query) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if v != nil {
-			obj[key] = v
-			arr = append(arr, v)
-		}
+		list.collect(key, v)
+
 		if err := r.endObject(); err != nil {
 			if errors.Is(err, errDone) {
 				break
@@ -80,10 +80,7 @@ func (r *reader) object(q Query) (interface{}, error) {
 			return nil, err
 		}
 	}
-	if q == KeepAll {
-		return obj, nil
-	}
-	return firstOrAll(arr), nil
+	return list.get(), nil
 }
 
 func (r *reader) endObject() error {
@@ -116,15 +113,13 @@ func (r *reader) key() (string, error) {
 }
 
 func (r *reader) array(q Query) (interface{}, error) {
-	var arr []interface{}
+	list := createArray()
 	for i := 0; ; i++ {
 		v, err := r.traverse(q, strconv.Itoa(i))
 		if err != nil {
 			return nil, err
 		}
-		if v != nil {
-			arr = append(arr, v)
-		}
+		list.collect("", v)
 
 		if err := r.endArray(); err != nil {
 			if errors.Is(err, errDone) {
@@ -133,7 +128,7 @@ func (r *reader) array(q Query) (interface{}, error) {
 			return nil, err
 		}
 	}
-	return firstOrAll(arr), nil
+	return list.get(), nil
 }
 
 func (r *reader) endArray() error {
@@ -336,13 +331,6 @@ func (r *reader) read() (rune, error) {
 
 func (r *reader) unread() {
 	r.inner.UnreadRune()
-}
-
-func firstOrAll(arr []interface{}) interface{} {
-	if len(arr) == 1 {
-		return arr[0]
-	}
-	return arr
 }
 
 func jsonBlank(r rune) bool {
