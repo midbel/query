@@ -1,235 +1,386 @@
 package query
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"strconv"
-	"strings"
+	"unicode/utf8"
 )
-
-var ErrSkip = errors.New("skip")
-
-var KeepAll Filter = all{}
 
 type Filter interface {
 	Next(string) (Filter, error)
 }
 
-// ident[.query][,query]
+type Parser struct {
+	scan *Scanner
+	curr Token
+	peek Token
+}
+
 func Parse(str string) (Filter, error) {
 	if str == "." {
 		return KeepAll, nil
 	}
-	r := strings.NewReader(str)
-	return parse(r)
+	p := Parser{
+		scan: Scan(str),
+	}
+	p.next()
+	p.next()
+	return p.Parse()
 }
 
-func parse(r io.RuneScanner) (Filter, error) {
+func (p *Parser) Parse() (Filter, error) {
+	return p.parse()
+}
+
+func (p *Parser) parse() (Filter, error) {
 	var list []Filter
-	for {
-		c, _, err := r.ReadRune()
+	for !p.done() {
+		curr, err := p.parseFilter()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
 			return nil, err
 		}
-		switch c {
-		case '.':
-		case ',':
-			if len(list) == 0 {
-				return nil, fmt.Errorf("',' not valid at this position")
+		list = append(list, curr)
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Eof) {
+				return nil, fmt.Errorf("parser: expected query after ','")
 			}
-			c, _, _ = r.ReadRune()
+		case Eof:
 		default:
-			return nil, fmt.Errorf("unexpected character %c", c)
+			return nil, fmt.Errorf("parser: expected ',' or eof")
 		}
-		if c != '.' {
-			return nil, fmt.Errorf("expected '.' before identifier")
-		}
-		q, err := parseQuery(r)
-		if err != nil {
-			return nil, err
-		}
-		list = append(list, q)
 	}
-	if len(list) == 1 {
+	if len(list) == 0 {
 		return list[0], nil
 	}
-
 	a := any{
 		list: list,
 	}
 	return &a, nil
 }
 
-func parseQuery(r io.RuneScanner) (Filter, error) {
+func (p *Parser) parseFilter() (Filter, error) {
 	var (
-		err   error
-		query Filter
+		curr Filter
+		err  error
 	)
-	switch c, _, _ := r.ReadRune(); {
-	case isQuote(c):
-		query, err = parseIdent(r, quoteIdent)
-	case isLetter(c):
-		query, err = parseIdent(r, literalIdent)
-	case isArray(c):
-		query, err = parseArray(r)
-	case isGroup(c):
-		query, err = parseGroup(r)
+	if err := p.expect(Dot, "parser: expected '.'"); err != nil {
+		return nil, err
+	}
+	p.next()
+	switch p.curr.Type {
+	case Literal:
+		curr, err = p.parseIdent()
+	case Lparen:
+		curr, err = p.parseGroup()
+	case Lsquare:
+		curr, err = p.parseArray()
 	default:
-		err = fmt.Errorf("query: unexpected character %c", c)
+		return nil, fmt.Errorf("expected '.' or '('")
 	}
-	return query, err
-}
-
-func literalIdent(r io.RuneScanner) (string, error) {
-	var str bytes.Buffer
-	for {
-		c, _, err := r.ReadRune()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return "", err
-		}
-		if !isAlpha(c) {
-			r.UnreadRune()
-			break
-		}
-		str.WriteRune(c)
-	}
-	return str.String(), nil
-}
-
-func quoteIdent(r io.RuneScanner) (string, error) {
-	quote, _, _ := r.ReadRune()
-	var str bytes.Buffer
-	for {
-		c, _, err := r.ReadRune()
-		if err != nil {
-			return "", err
-		}
-		if c == quote {
-			break
-		}
-		str.WriteRune(c)
-	}
-	return str.String(), nil
-}
-
-func parseIdent(r io.RuneScanner, get func(io.RuneScanner) (string, error)) (Filter, error) {
-	r.UnreadRune()
-
-	var (
-		query ident
-		err   error
-	)
-	query.ident, err = get(r)
 	if err != nil {
 		return nil, err
 	}
-	switch c, _, tmp := r.ReadRune(); c {
-	case '.':
-		query.next, err = parseQuery(r)
-	case '[':
-		query.next, err = parseArray(r)
-	case ',', ')':
-		r.UnreadRune()
+	switch p.curr.Type {
+	case Eof, Rparen, Comma:
 	default:
-		if errors.Is(tmp, io.EOF) {
-			return &query, nil
-		}
-		err = fmt.Errorf("identifier: unexpected character %c", c)
+		return nil, fmt.Errorf("expected ',' or end of input")
 	}
-	return &query, err
+	return curr, err
 }
 
-func parseGroup(r io.RuneScanner) (Filter, error) {
-	var grp group
-	for {
-		f, err := parseQuery(r)
-		if err != nil {
+func (p *Parser) parseIdent() (Filter, error) {
+	var (
+		id  ident
+		err error
+	)
+	id.ident = p.curr.Literal
+	p.next()
+	switch p.curr.Type {
+	case Dot:
+		id.next, err = p.parseFilter()
+	case Lsquare:
+		id.next, err = p.parseArray()
+	case Comma, Eof, Rparen:
+	default:
+		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
+	}
+	return &id, err
+}
+
+func (p *Parser) parseArray() (Filter, error) {
+	p.next()
+	var (
+		arr array
+		err error
+	)
+	for !p.done() && !p.is(Rsquare) {
+		if err := p.expect(Number, "array: number expected"); err != nil {
 			return nil, err
 		}
-		grp.list = append(grp.list, f)
-		switch c, _, _ := r.ReadRune(); c {
-		case ',':
-		case ')':
-			return &grp, nil
-		default:
-			return nil, fmt.Errorf("array: unexpected character %c", c)
-		}
-	}
-	return &grp, nil
-}
-
-func parseArray(r io.RuneScanner) (Filter, error) {
-	var arr array
-	skipBlank(r)
-	if c, _, _ := r.ReadRune(); c == ']' {
-		return &arr, nil
-	}
-	r.UnreadRune()
-	for {
-		skipBlank(r)
-		n, err := parseInt(r)
+		n, err := strconv.Atoi(p.curr.Literal)
 		if err != nil {
 			return nil, err
 		}
 		arr.index = append(arr.index, n)
-
-		switch c, _, _ := r.ReadRune(); c {
-		case ',':
-			skipBlank(r)
-		case ']':
-			c, _, err := r.ReadRune()
-			if c == '.' {
-				arr.next, err = parseQuery(r)
+		p.next()
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rsquare) {
+				return nil, fmt.Errorf("array: expected number after ','")
 			}
-			if errors.Is(err, io.EOF) {
-				err = nil
-			}
-			return &arr, err
+		case Rsquare:
 		default:
-			return nil, fmt.Errorf("array: unexpected character %c", c)
+			return nil, fmt.Errorf("array: expected ',' or ']")
 		}
 	}
-	return &arr, nil
+	if err := p.expect(Rsquare, "array: expected ']"); err != nil {
+		return nil, err
+	}
+	p.next()
+	switch p.curr.Type {
+	case Dot:
+		arr.next, err = p.parseFilter()
+	case Comma, Eof, Rparen:
+	default:
+		err = fmt.Errorf("array: unexpected character %s", p.curr)
+	}
+	return &arr, err
 }
 
-func parseInt(r io.RuneScanner) (string, error) {
-	defer r.UnreadRune()
-
-
-	var str bytes.Buffer
-	c, _, _ := r.ReadRune()
-	if c == '-' {
-		str.WriteRune(c)
-	} else {
-		r.UnreadRune()
-	}
-	for {
-		c, _, _ := r.ReadRune()
-		if !isDigit(c) {
-			break
+func (p *Parser) parseGroup() (Filter, error) {
+	p.next()
+	var (
+		grp group
+		err error
+	)
+	for !p.done() && !p.is(Rparen) {
+		curr, err := p.parseFilter()
+		if err != nil {
+			return nil, err
 		}
-		str.WriteRune(c)
+		grp.list = append(grp.list, curr)
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rparen) {
+				return nil, fmt.Errorf("group: expected query after ','")
+			}
+		case Rparen:
+		default:
+			return nil, fmt.Errorf("group: expected ',' or ')")
+		}
 	}
-	_, err := strconv.Atoi(str.String())
-	return str.String(), err
+	if err := p.expect(Rparen, "group: expected ')'"); err != nil {
+		return nil, err
+	}
+	p.next()
+	switch p.curr.Type {
+	case Dot:
+		grp.next, err = p.parseFilter()
+	case Lsquare:
+		grp.next, err = p.parseArray()
+	case Comma, Eof:
+	default:
+		err = fmt.Errorf("group: unexpected character %s", p.curr)
+	}
+	return &grp, err
 }
 
-func skipBlank(r io.RuneScanner) {
-	defer r.UnreadRune()
-	for {
-		c, _, _ := r.ReadRune()
-		if !isBlank(c) {
-			break
-		}
+func (p *Parser) expect(kind rune, msg string) error {
+	if p.curr.Type != kind {
+		return fmt.Errorf(msg)
 	}
+	return nil
+}
+
+func (p *Parser) is(kind rune) bool {
+	return p.curr.Type == kind
+}
+
+func (p *Parser) done() bool {
+	return p.curr.Type == Eof
+}
+
+func (p *Parser) next() {
+	p.curr = p.peek
+	p.peek = p.scan.Scan()
+}
+
+const (
+	Eof rune = -(1 + iota)
+	Literal
+	Number
+	Dot
+	Comma
+	Lparen
+	Rparen
+	Lsquare
+	Rsquare
+	Invalid
+)
+
+type Token struct {
+	Literal string
+	Type    rune
+}
+
+func (t Token) String() string {
+	switch t.Type {
+	case Eof:
+		return "<eof>"
+	case Dot:
+		return "<dot>"
+	case Comma:
+		return "<comma>"
+	case Lparen:
+		return "<lparen>"
+	case Rparen:
+		return "<rparen>"
+	case Lsquare:
+		return "<lsquare>"
+	case Rsquare:
+		return "<rsquare>"
+	case Invalid:
+		if t.Literal != "" {
+			return fmt.Sprintf("invalid(%s)", t.Literal)
+		}
+		return "<invalid>"
+	case Literal:
+		return fmt.Sprintf("literal(%s)", t.Literal)
+	case Number:
+		return fmt.Sprintf("number(%s)", t.Literal)
+	default:
+		return "<unknown>"
+	}
+}
+
+type Scanner struct {
+	input []byte
+	curr  int
+	next  int
+	char  rune
+}
+
+func Scan(str string) *Scanner {
+	return &Scanner{
+		input: []byte(str),
+	}
+}
+
+func (s *Scanner) Scan() Token {
+	var tok Token
+	s.read()
+	if s.done() {
+		tok.Type = Eof
+		return tok
+	}
+	switch {
+	case isLetter(s.char):
+		s.scanIdent(&tok)
+	case isQuote(s.char):
+		s.scanQuote(&tok)
+	case isDigit(s.char):
+		s.scanNumber(&tok)
+	case isDelim(s.char):
+		s.scanDelim(&tok)
+	case isBlank(s.char):
+		s.skipBlank()
+		return s.Scan()
+	default:
+	}
+	return tok
+}
+
+func (s *Scanner) scanIdent(tok *Token) {
+	defer s.unread()
+
+	pos := s.curr
+	for !s.done() && isAlpha(s.char) {
+		s.read()
+	}
+	tok.Type = Literal
+	tok.Literal = string(s.input[pos:s.curr])
+}
+
+func (s *Scanner) scanQuote(tok *Token) {
+	quote := s.char
+	s.read()
+	pos := s.curr
+	for !s.done() && s.char != quote {
+		s.read()
+	}
+	tok.Type = Literal
+	if s.char != quote {
+		tok.Type = Invalid
+	}
+	tok.Literal = string(s.input[pos:s.curr])
+}
+
+func (s *Scanner) scanNumber(tok *Token) {
+	defer s.unread()
+
+	pos := s.curr
+	for !s.done() && isDigit(s.char) {
+		s.read()
+	}
+	tok.Type = Number
+	tok.Literal = string(s.input[pos:s.curr])
+}
+
+func (s *Scanner) scanDelim(tok *Token) {
+	switch s.char {
+	case ',':
+		tok.Type = Comma
+	case '.':
+		tok.Type = Dot
+	case '(':
+		tok.Type = Lparen
+	case ')':
+		tok.Type = Rparen
+	case '[':
+		tok.Type = Lsquare
+	case ']':
+		tok.Type = Rsquare
+	default:
+		tok.Type = Invalid
+	}
+}
+
+func (s *Scanner) skipBlank() {
+	defer s.unread()
+	for !s.done() && isBlank(s.char) {
+		s.read()
+	}
+}
+
+func (s *Scanner) read() {
+	if s.curr >= len(s.input) {
+		s.char = 0
+		return
+	}
+	c, z := utf8.DecodeRune(s.input[s.next:])
+	s.curr = s.next
+	s.next = s.curr + z
+	s.char = c
+}
+
+func (s *Scanner) unread() {
+	c, z := utf8.DecodeRune(s.input[s.curr:])
+	s.char = c
+	s.next = s.curr
+	s.curr -= z
+}
+
+func (s *Scanner) peek() rune {
+	c, _ := utf8.DecodeRune(s.input[s.next:])
+	return c
+}
+
+func (s *Scanner) done() bool {
+	return s.curr >= len(s.input)
 }
 
 func isAlpha(r rune) bool {
@@ -266,4 +417,8 @@ func isArray(r rune) bool {
 
 func isGroup(r rune) bool {
 	return r == '('
+}
+
+func isDelim(r rune) bool {
+	return r == ']' || r == ')' || r == ',' || r == '.' || isGroup(r) || isArray(r)
 }

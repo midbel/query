@@ -17,7 +17,10 @@ func TestParse(t *testing.T) {
 		".[]",
 		".[0, 1, 2]",
 		".array[]",
-		".(first,last).ident",
+		".array[].ident",
+		".(.first.second,.last).next",
+		".(.first,.last)[].next",
+		".",
 	}
 	for _, d := range data {
 		_, err := Parse(d)
