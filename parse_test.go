@@ -42,6 +42,9 @@ func TestParse_Error(t *testing.T) {
 		".array[1, 2",
 		".array[",
 		".array[1 2",
+		".[",
+		".)",
+		".]",
 		".array[\"foobar\"]",
 	}
 	for _, d := range data {

@@ -1,0 +1,29 @@
+{
+	"app": "demo",
+	"version": "1.10.4",
+	"certificate": {
+		"key": "/tls/serv.pem",
+		"cert": "/tls/cert.pem"
+	},
+	"servers": [
+		{
+			"name": "foo",
+			"ip": "10.0.1.1",
+			"prime": true,
+			"mail": "support@foobar.org"
+		},
+		{
+			"name": "bar",
+			"ip": "10.0.100.1",
+			"prime": false,
+			"mail": "support@foobar.org"
+		}
+	],
+	"database": {
+		"server": "db",
+		"ip": "10.0.67.1",
+		"user": "admin",
+		"pass": "admin",
+		"name": "admin"
+	}
+}

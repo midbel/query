@@ -6,8 +6,8 @@ import (
 	"unicode/utf8"
 )
 
-type Filter interface {
-	Next(string) (Filter, error)
+type Query interface {
+	Next(string) (Query, error)
 }
 
 type Parser struct {
@@ -16,7 +16,7 @@ type Parser struct {
 	peek Token
 }
 
-func Parse(str string) (Filter, error) {
+func Parse(str string) (Query, error) {
 	if str == "." {
 		return KeepAll, nil
 	}
@@ -28,12 +28,12 @@ func Parse(str string) (Filter, error) {
 	return p.Parse()
 }
 
-func (p *Parser) Parse() (Filter, error) {
+func (p *Parser) Parse() (Query, error) {
 	return p.parse()
 }
 
-func (p *Parser) parse() (Filter, error) {
-	var list []Filter
+func (p *Parser) parse() (Query, error) {
+	var list []Query
 	for !p.done() {
 		curr, err := p.parseFilter()
 		if err != nil {
@@ -60,9 +60,9 @@ func (p *Parser) parse() (Filter, error) {
 	return &a, nil
 }
 
-func (p *Parser) parseFilter() (Filter, error) {
+func (p *Parser) parseFilter() (Query, error) {
 	var (
-		curr Filter
+		curr Query
 		err  error
 	)
 	if err := p.expect(Dot, "parser: expected '.'"); err != nil {
@@ -90,7 +90,7 @@ func (p *Parser) parseFilter() (Filter, error) {
 	return curr, err
 }
 
-func (p *Parser) parseIdent() (Filter, error) {
+func (p *Parser) parseIdent() (Query, error) {
 	var (
 		id  ident
 		err error
@@ -109,7 +109,7 @@ func (p *Parser) parseIdent() (Filter, error) {
 	return &id, err
 }
 
-func (p *Parser) parseArray() (Filter, error) {
+func (p *Parser) parseArray() (Query, error) {
 	p.next()
 	var (
 		arr array
@@ -119,11 +119,11 @@ func (p *Parser) parseArray() (Filter, error) {
 		if err := p.expect(Number, "array: number expected"); err != nil {
 			return nil, err
 		}
-		n, err := strconv.Atoi(p.curr.Literal)
-		if err != nil {
+
+		if _, err := strconv.Atoi(p.curr.Literal); err != nil {
 			return nil, err
 		}
-		arr.index = append(arr.index, n)
+		arr.index = append(arr.index, p.curr.Literal)
 		p.next()
 		switch p.curr.Type {
 		case Comma:
@@ -150,7 +150,7 @@ func (p *Parser) parseArray() (Filter, error) {
 	return &arr, err
 }
 
-func (p *Parser) parseGroup() (Filter, error) {
+func (p *Parser) parseGroup() (Query, error) {
 	p.next()
 	var (
 		grp group

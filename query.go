@@ -6,28 +6,36 @@ import (
 
 var ErrSkip = errors.New("skip")
 
-var KeepAll Filter = all{}
+var KeepAll Query = all{}
 
 type all struct{}
 
-func (a all) Next(string) (Filter, error) {
+func (a all) Next(string) (Query, error) {
 	return a, nil
 }
 
 type array struct {
-	index []int
-	next  Filter
+	index []string
+	next  Query
 }
 
-func (a *array) Next(ident string) (Filter, error) {
+func (a *array) Next(ident string) (Query, error) {
+	if len(a.index) == 0 {
+		return a.next, nil
+	}
+	for _, i := range a.index {
+		if ident == i {
+			return a.next, nil
+		}
+	}
 	return nil, ErrSkip
 }
 
 type any struct {
-	list []Filter
+	list []Query
 }
 
-func (a *any) Next(ident string) (Filter, error) {
+func (a *any) Next(ident string) (Query, error) {
 	for _, f := range a.list {
 		if n, err := f.Next(ident); err == nil {
 			return next(n), nil
@@ -37,29 +45,29 @@ func (a *any) Next(ident string) (Filter, error) {
 }
 
 type group struct {
-	list []Filter
-	next Filter
+	list []Query
+	next Query
 }
 
-func (g *group) Next(ident string) (Filter, error) {
+func (g *group) Next(ident string) (Query, error) {
 	return nil, ErrSkip
 }
 
 type ident struct {
 	ident string
-	next  Filter
+	next  Query
 }
 
-func (i *ident) Next(ident string) (Filter, error) {
+func (i *ident) Next(ident string) (Query, error) {
 	if i.ident == ident {
 		return next(i.next), nil
 	}
 	return nil, ErrSkip
 }
 
-func next(in Filter) Filter {
-	if in == nil {
-		return KeepAll
-	}
+func next(in Query) Query {
+	// if in == nil {
+	// 	return KeepAll
+	// }
 	return in
 }
