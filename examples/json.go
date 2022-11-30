@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/midbel/query"
@@ -11,19 +12,21 @@ import (
 func main() {
 	flag.Parse()
 
-	r, err := os.Open(flag.Arg(0))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	var r io.Reader = os.Stdin
+	if f, err := os.Open(flag.Arg(0)); err == nil {
+		defer f.Close()
+		r = f
+	} else {
+		if flag.Arg(0) != "" && flag.Arg(0) != "-" {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
 	}
-	defer r.Close()
 
-	rs, err := query.Filter(r, flag.Arg(1))
+	res, err := query.Filter(r, flag.Arg(1))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	for i := range rs {
-		fmt.Println(rs[i])
-	}
+	fmt.Printf(">> %+s\n", res)
 }

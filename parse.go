@@ -6,10 +6,6 @@ import (
 	"unicode/utf8"
 )
 
-type Query interface {
-	Next(string) (Query, error)
-}
-
 type Parser struct {
 	scan *Scanner
 	curr Token
@@ -51,7 +47,7 @@ func (p *Parser) parse() (Query, error) {
 			return nil, fmt.Errorf("parser: expected ',' or eof")
 		}
 	}
-	if len(list) == 0 {
+	if len(list) == 1 {
 		return list[0], nil
 	}
 	a := any{
@@ -64,24 +60,29 @@ func (p *Parser) parseQuery() (Query, error) {
 	var (
 		curr Query
 		err  error
+		dot  bool
 	)
 	switch p.curr.Type {
 	default:
 		return nil, fmt.Errorf("query: expected '.', '[' or '{'")
 	case Dot:
+		dot = true
 		p.next()
 	case Lsquare:
-		return nil, p.parseMakeArray()
-	case Lcurly:
-		return nil, p.parseMakeObject()
-	}
-	switch p.curr.Type {
-	case Literal:
-		curr, err = p.parseIdent()
-	case Lsquare:
 		curr, err = p.parseArray()
-	default:
-		return nil, fmt.Errorf("query: expected '.' or '('")
+	case Lcurly:
+		curr, err = p.parseObject()
+	}
+
+	if dot {
+		switch p.curr.Type {
+		case Literal:
+			curr, err = p.parseIdent()
+		case Lsquare:
+			curr, err = p.parseIndex()
+		default:
+			return nil, fmt.Errorf("query: expected '.' or '('")
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -94,33 +95,38 @@ func (p *Parser) parseQuery() (Query, error) {
 	return curr, err
 }
 
-func (p *Parser) parseMakeArray() error {
+func (p *Parser) parseArray() (Query, error) {
 	p.next()
+	var arr array
 	for !p.done() && !p.is(Rsquare) {
-		_, err := p.parseQuery()
+		q, err := p.parseQuery()
 		if err != nil {
-			return err
+			return nil, err
 		}
+		arr.list = append(arr.list, q)
 		switch p.curr.Type {
 		case Comma:
 			p.next()
 			if p.is(Rsquare) {
-				return fmt.Errorf("array constructor: expected query after comma")
+				return nil, fmt.Errorf("array constructor: expected query after comma")
 			}
 		case Rsquare:
 		default:
-			return fmt.Errorf("array constructor: expected ',' or '}'")
+			return nil, fmt.Errorf("array constructor: expected ',' or '}'")
 		}
 	}
 	if err := p.expect(Rsquare, "array constructor: expected ']' at end"); err != nil {
-		return err
+		return nil, err
 	}
 	p.next()
-	return nil
+	return &arr, nil
 }
 
-func (p *Parser) parseMakeObject() error {
+func (p *Parser) parseObject() (Query, error) {
 	p.next()
+	obj := object{
+		fields: make(map[string]Query),
+	}
 	for !p.done() && !p.is(Rcurly) {
 		var ident string
 		switch p.curr.Type {
@@ -129,39 +135,39 @@ func (p *Parser) parseMakeObject() error {
 		case Literal:
 			ident = p.curr.Literal
 			p.next()
-			if err := p.expect(Colon, "object constructor: expect ':' after literal"); err != nil {
-				return err
+			if err := p.expect(Colon, "object: expect ':' after literal"); err != nil {
+				return nil, err
 			}
 			p.next()
 		default:
-			return fmt.Errorf("object constructor: expected '.' or literal")
+			return nil, fmt.Errorf("object: expected '.' or literal")
 		}
-		_, err := p.parseQuery()
+		q, err := p.parseQuery()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		_ = ident
+		obj.fields[ident] = q
 		switch p.curr.Type {
 		case Comma:
 			p.next()
 			if p.is(Rcurly) {
-				return fmt.Errorf("object constructor: expected query after comma")
+				return nil, fmt.Errorf("object: expected query after comma")
 			}
 		case Rcurly:
 		default:
-			return fmt.Errorf("object constructor: expected ',' or '}'")
+			return nil, fmt.Errorf("object: expected ',' or '}'")
 		}
 	}
-	if err := p.expect(Rcurly, "object constructor: expected '}' at end"); err != nil {
-		return err
+	if err := p.expect(Rcurly, "object: expected '}' at end"); err != nil {
+		return nil, err
 	}
 	p.next()
 	switch p.curr.Type {
-	case Comma, Eof:
+	case Comma, Eof, Rsquare, Rcurly:
 	default:
-		return fmt.Errorf("object constructor: unexpected character %s", p.curr)
+		return nil, fmt.Errorf("object: unexpected character %s", p.curr)
 	}
-	return nil
+	return &obj, nil
 }
 
 func (p *Parser) parseIdent() (Query, error) {
@@ -175,7 +181,7 @@ func (p *Parser) parseIdent() (Query, error) {
 	case Dot:
 		id.next, err = p.parseQuery()
 	case Lsquare:
-		id.next, err = p.parseArray()
+		id.next, err = p.parseIndex()
 	case Comma, Eof, Rcurly, Rsquare:
 	default:
 		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
@@ -183,45 +189,45 @@ func (p *Parser) parseIdent() (Query, error) {
 	return &id, err
 }
 
-func (p *Parser) parseArray() (Query, error) {
+func (p *Parser) parseIndex() (Query, error) {
 	p.next()
 	var (
-		arr array
+		idx index
 		err error
 	)
 	for !p.done() && !p.is(Rsquare) {
-		if err := p.expect(Number, "array: number expected"); err != nil {
+		if err := p.expect(Number, "index: number expected"); err != nil {
 			return nil, err
 		}
 
 		if _, err := strconv.Atoi(p.curr.Literal); err != nil {
 			return nil, err
 		}
-		arr.index = append(arr.index, p.curr.Literal)
+		idx.list = append(idx.list, p.curr.Literal)
 		p.next()
 		switch p.curr.Type {
 		case Comma:
 			p.next()
 			if p.is(Rsquare) {
-				return nil, fmt.Errorf("array: expected number after ','")
+				return nil, fmt.Errorf("index: expected number after ','")
 			}
 		case Rsquare:
 		default:
-			return nil, fmt.Errorf("array: expected ',' or ']")
+			return nil, fmt.Errorf("index: expected ',' or ']")
 		}
 	}
-	if err := p.expect(Rsquare, "array: expected ']"); err != nil {
+	if err := p.expect(Rsquare, "index: expected ']"); err != nil {
 		return nil, err
 	}
 	p.next()
 	switch p.curr.Type {
 	case Dot:
-		arr.next, err = p.parseQuery()
-	case Comma, Eof:
+		idx.next, err = p.parseQuery()
+	case Comma, Eof, Rsquare, Rcurly:
 	default:
-		err = fmt.Errorf("array: unexpected character %s", p.curr)
+		err = fmt.Errorf("index: unexpected character %s", p.curr)
 	}
-	return &arr, err
+	return &idx, err
 }
 
 func (p *Parser) expect(kind rune, msg string) error {

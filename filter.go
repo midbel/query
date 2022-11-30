@@ -9,11 +9,19 @@ import (
 	"strconv"
 )
 
-func Filter(r io.Reader, query string) ([]string, error) {
+func Filter(r io.Reader, query string) (string, error) {
 	q, err := Parse(query)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
+	err = Execute(r, q)
+	if err != nil {
+		return "", err
+	}
+	return q.Get(), nil
+}
+
+func Execute(r io.Reader, q Query) error {
 	rs := prepare(r)
 	return rs.Read(q)
 }
@@ -31,53 +39,54 @@ func prepare(r io.Reader) *reader {
 	}
 }
 
-func (r *reader) Read(q Query) ([]string, error) {
+func (r *reader) Read(q Query) error {
 	c, err := r.read()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	switch {
 	case jsonQuote(c):
-		_, err := r.literal()
-		return nil, err
+		_, err = r.literal()
 	case jsonIdent(c):
-		_, err := r.identifier()
-		return nil, err
+		_, err = r.identifier()
 	case jsonDigit(c):
-		_, err := r.number()
-		return nil, err
+		_, err = r.number()
 	case jsonArray(c):
-		return r.array(q)
+		err = r.array(q)
 	case jsonObject(c):
-		return r.object(q)
+		err = r.object(q)
 	default:
-		return nil, fmt.Errorf("unexpected character %c", c)
+		err = fmt.Errorf("unexpected character %c", c)
 	}
+	return err
 }
 
-func (r *reader) object(q Query) ([]string, error) {
+func (r *reader) object(q Query) error {
 	r.enter()
 	defer r.leave()
 
-	var rs []string
+	var seen = make(map[string]struct{})
 	for {
 		key, err := r.key()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		ns, err := r.traverse(q, key)
-		if err != nil {
-			return nil, err
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("object: duplicate key %q", key)
 		}
-		rs = append(rs, ns...)
+		seen[key] = struct{}{}
+
+		if err = r.traverse(q, key); err != nil {
+			return err
+		}
 		if err := r.endObject(); err != nil {
 			if errors.Is(err, errDone) {
 				break
 			}
-			return nil, err
+			return err
 		}
 	}
-	return rs, nil
+	return nil
 }
 
 func (r *reader) endObject() error {
@@ -109,23 +118,21 @@ func (r *reader) key() (string, error) {
 	return key, nil
 }
 
-func (r *reader) array(q Query) ([]string, error) {
-	var rs []string
+func (r *reader) array(q Query) error {
 	for i := 0; ; i++ {
-		ns, err := r.traverse(q, strconv.Itoa(i))
+		err := r.traverse(q, strconv.Itoa(i))
 		if err != nil {
-			return nil, err
+			return err
 		}
-		rs = append(rs, ns...)
 
 		if err := r.endArray(); err != nil {
 			if errors.Is(err, errDone) {
 				break
 			}
-			return nil, err
+			return err
 		}
 	}
-	return rs, nil
+	return nil
 }
 
 func (r *reader) endArray() error {
@@ -142,28 +149,26 @@ func (r *reader) endArray() error {
 	return nil
 }
 
-func (r *reader) traverse(q Query, key string) ([]string, error) {
+func (r *reader) traverse(q Query, key string) error {
 	next, err := q.Next(key)
 	if err != nil {
-		_, err = r.Read(KeepAll)
-		return nil, err
+		return r.Read(KeepAll)
 	}
 	var wrapped bool
 	if wrapped = next == nil; wrapped {
 		r.wrap()
 		next = KeepAll
 	}
-	ns, err := r.Read(next)
-	if err != nil {
-		return nil, err
+	if err = r.Read(next); err != nil {
+		return err
 	}
 	if wrapped {
 		str := r.unwrap()
-		if str != "" {
-			ns = append(ns, str)
+		if s, ok := q.(setter); ok {
+			s.set(str)
 		}
 	}
-	return ns, nil
+	return nil
 }
 
 func (r *reader) literal() (string, error) {
@@ -321,11 +326,12 @@ func (r *reader) leave() {
 }
 
 func (r *reader) read() (rune, error) {
-	c, _, err := r.inner.ReadRune()
-	if err == nil && jsonBlank(c) {
-		return r.read()
+	for {
+		c, _, err := r.inner.ReadRune()
+		if !jsonBlank(c) {
+			return c, err
+		}
 	}
-	return c, err
 }
 
 func (r *reader) unread() {
