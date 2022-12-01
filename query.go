@@ -2,6 +2,7 @@ package query
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/midbel/slices"
@@ -41,6 +42,40 @@ func (a *all) set(str string) {
 	a.value = str
 }
 
+type ident struct {
+	ident  string
+	values []string
+	next   Query
+}
+
+func (i *ident) Next(ident string) (Query, error) {
+	if i.ident == ident {
+		return i.next, nil
+	}
+	return nil, ErrSkip
+}
+
+func (i *ident) Get() string {
+	if i.next != nil {
+		return i.next.Get()
+	}
+	if len(i.values) == 1 {
+		return slices.Fst(i.values)
+	}
+	return writeArray(i.values)
+}
+
+func (i *ident) set(str string) {
+	i.values = append(i.values, str)
+}
+
+func (i *ident) get() []string {
+	if i.next == nil {
+		return i.values
+	}
+	return i.next.get()
+}
+
 type index struct {
 	list   []string
 	values []string
@@ -60,27 +95,21 @@ func (i *index) Next(ident string) (Query, error) {
 }
 
 func (i *index) Get() string {
+	_ = fmt.Sprintf
 	if i.next != nil {
 		return i.next.Get()
 	}
 	if len(i.values) == 1 {
 		return slices.Fst(i.values)
 	}
-	var str strings.Builder
-	str.WriteRune('[')
-	for j := range i.values {
-		if j > 0 {
-			str.WriteRune(',')
-			str.WriteRune(' ')
-		}
-		str.WriteString(i.values[j])
-	}
-	str.WriteRune(']')
-	return str.String()
+	return writeArray(i.values)
 }
 
 func (i *index) get() []string {
-	return i.values
+	if i.next == nil {
+		return i.values
+	}
+	return i.next.get()
 }
 
 func (i *index) set(str string) {
@@ -103,17 +132,11 @@ func (a *any) Next(ident string) (Query, error) {
 }
 
 func (a *any) Get() string {
-	var str strings.Builder
-	str.WriteRune('[')
+	var values []string
 	for i := range a.list {
-		if i > 0 {
-			str.WriteRune(',')
-			str.WriteRune(' ')
-		}
-		str.WriteString(a.list[i].Get())
+		values = append(values, a.list[i].Get())
 	}
-	str.WriteRune(']')
-	return str.String()
+	return writeArray(values)
 }
 
 func (a *any) set(str string) {
@@ -126,53 +149,10 @@ func (a *any) set(str string) {
 func (a *any) get() []string {
 	var values []string
 	for i := range a.list {
-		values = append(values, a.list[i].get()...)
+		arr := writeArray(a.list[i].get())
+		values = append(values, arr)
 	}
 	return values
-}
-
-type ident struct {
-	ident  string
-	values []string
-	next   Query
-}
-
-func (i *ident) Next(ident string) (Query, error) {
-	if i.ident == ident {
-		return i.next, nil
-	}
-	return nil, ErrSkip
-}
-
-func (i *ident) Get() string {
-	if i.next != nil {
-		return i.next.Get()
-	}
-	if len(i.values) == 1 {
-		return slices.Fst(i.values)
-	}
-	var str strings.Builder
-	str.WriteRune('[')
-	for j := range i.values {
-		if j > 0 {
-			str.WriteRune(',')
-			str.WriteRune(' ')
-		}
-		str.WriteString(i.values[j])
-	}
-	str.WriteRune(']')
-	return str.String()
-}
-
-func (i *ident) set(str string) {
-	i.values = append(i.values, str)
-}
-
-func (i *ident) get() []string {
-	if i.next == nil {
-		return i.values
-	}
-	return i.next.get()
 }
 
 type array struct {
@@ -192,31 +172,18 @@ func (a *array) Next(ident string) (Query, error) {
 }
 
 func (a *array) Get() string {
-	var str strings.Builder
-	str.WriteRune('[')
+	var values []string
 	for i := range a.list {
-		if i > 0 {
-			str.WriteRune(',')
-			str.WriteRune(' ')
-		}
-		// str.WriteString(a.list[i].Get())
-		vs := a.list[i].get()
-		for i := range vs {
-			if i > 0 {
-				str.WriteRune(',')
-				str.WriteRune(' ')
-			}
-			str.WriteString(vs[i])
-		}
+		values = append(values, a.list[i].get()...)
 	}
-	str.WriteRune(']')
-	return str.String()
+	return writeArray(values)
 }
 
 func (a *array) get() []string {
 	var values []string
 	for i := range a.list {
-		values = append(values, a.list[i].get()...)
+		arr := writeArray(a.list[i].get())
+		values = append(values, arr)
 	}
 	return values
 }
@@ -245,42 +212,12 @@ func (o *object) Next(ident string) (Query, error) {
 }
 
 func (o *object) Get() string {
-	var (
-		values [][]string
-		str    strings.Builder
-	)
+	var values [][]string
 	for _, k := range o.keys {
 		q := o.fields[k]
 		values = append(values, q.get())
 	}
-	values = slices.Combine(values...)
-	if len(values) > 1 {
-		str.WriteRune('[')
-	}
-	for i, vs := range values {
-		if i > 0 {
-			str.WriteRune(',')
-			str.WriteRune(' ')
-		}
-		str.WriteRune('{')
-		for j, k := range o.keys {
-			if j > 0 {
-				str.WriteRune(',')
-				str.WriteRune(' ')
-			}
-			str.WriteRune('"')
-			str.WriteString(k)
-			str.WriteRune('"')
-			str.WriteRune(':')
-			str.WriteRune(' ')
-			str.WriteString(vs[j])
-		}
-		str.WriteRune('}')
-	}
-	if len(values) > 1 {
-		str.WriteRune(']')
-	}
-	return str.String()
+	return writeObject(o.keys, slices.Combine(values...))
 }
 
 func (o *object) set(str string) {
@@ -297,4 +234,45 @@ func (o *object) get() []string {
 		values = append(values, q.get()...)
 	}
 	return values
+}
+
+func writeObject(keys []string, values [][]string) string {
+	var str strings.Builder
+	if len(values) > 1 {
+		str.WriteRune('[')
+	}
+	for i, vs := range values {
+		if i > 0 {
+			str.WriteRune(',')
+		}
+		str.WriteRune('{')
+		for j, k := range keys {
+			if j > 0 {
+				str.WriteRune(',')
+			}
+			str.WriteRune('"')
+			str.WriteString(k)
+			str.WriteRune('"')
+			str.WriteRune(':')
+			str.WriteString(vs[j])
+		}
+		str.WriteRune('}')
+	}
+	if len(values) > 1 {
+		str.WriteRune(']')
+	}
+	return str.String()
+}
+
+func writeArray(values []string) string {
+	var str strings.Builder
+	str.WriteRune('[')
+	for i := range values {
+		if i > 0 {
+			str.WriteRune(',')
+		}
+		str.WriteString(values[i])
+	}
+	str.WriteRune(']')
+	return str.String()
 }

@@ -1,7 +1,7 @@
 package query
 
 import (
-	"os"
+	"strings"
 	"testing"
 )
 
@@ -11,73 +11,75 @@ type QueryCase struct {
 }
 
 func TestFilter(t *testing.T) {
-	queries := []QueryCase{
+	queries := []struct {
+		Input string
+		Query string
+		Want  string
+	}{
 		{
+			Input: `{"user": "foobar", "number": 42}`,
 			Query: `.user`,
-			Want:  `"midbel"`,
+			Want:  `"foobar"`,
 		},
 		{
-			Query: `.user,.mail`,
-			Want:  `["midbel", "noreply@midbel.org"]`,
+			Input: `[{"user": "foo"}, {"user": "bar"}]`,
+			Query: `.[]`,
+			Want:  `[{"user":"foo"},{"user":"bar"}]`,
 		},
 		{
-			Query: `{.user,.mail}`,
-			Want:  `{"user": "midbel", "mail": "noreply@midbel.org"}`,
+			Input: `[{"user": "foo"}, {"user": "bar"}]`,
+			Query: `.[0,1]`,
+			Want:  `[{"user":"foo"},{"user":"bar"}]`,
 		},
 		{
-			Query: `{name: .user},{.user,.age}`,
-			Want:  `[{"name": "midbel"}, {"user": "midbel", "age": 0}]`,
-		}, {
-			Query: `{.user,.age},{name: .user}`,
-			Want:  `[{"user": "midbel", "age": 0}, {"name": "midbel"}]`,
+			Input: `[{"user": "foo"}, {"user": "bar"}]`,
+			Query: `.[0]`,
+			Want:  `{"user":"foo"}`,
 		},
 		{
-			Query: `{name: .user, contact: .mail}`,
-			Want:  `{"name": "midbel", "contact": "noreply@midbel.org"}`,
+			Input: `{"user": "foobar", "number": 42, "active": false}`,
+			Query: `.user,.active`,
+			Want:  `["foobar",false]`,
 		},
 		{
-			Query: `[.user,.mail]`,
-			Want:  `["midbel", "noreply@midbel.org"]`,
+			Input: `[{"user": "foo"}, {"user": "bar"}]`,
+			Query: `.[].user`,
+			Want:  `["foo","bar"]`,
 		},
 		{
-			Query: `{name: .user, projects: [.projects[].name]}`,
-			Want:  `{"name": "midbel", "projects": ["slices", "charts", "query"]}`,
-		}, {
-			Query: `{name: .user, projects: [.projects[0, 1].name]}`,
-			Want:  `[{"name": "midbel", "project": "slices"}, {"name": "midbel", "project": "charts"}]`,
+			Input: `[{"user": "foo"}, {"user": "bar"}]`,
+			Query: `.[0].user`,
+			Want:  `"foo"`,
 		},
 		{
-			Query: `.projects[].priority`,
-			Want:  `[10, 100, 60]`,
+			Input: `{"user": "foobar", "score": 42}`,
+			Query: `{name: .user, .score}`,
+			Want:  `{"name":"foobar","score":42}`,
 		},
 		{
-			Query: `.projects[0, 1].priority`,
-			Want:  `[10, 100]`,
+			Input: `{"user": "foobar", "scores":[0.5,10.1,9]}`,
+			Query: `{.user, score: .scores[]}`,
+			Want:  `[{"user":"foobar","score":0.5},{"user":"foobar","score":10.1},{"user":"foobar","score":9}]`,
 		},
 		{
-			Query: `.projects[0].priority`,
-			Want:  `10`,
+			Input: `{"user": "foobar", "scores":[0.5,10.1,9]}`,
+			Query: `[.user, .scores[]]`,
+			Want:  `["foobar",0.5,10.1,9]`,
+		},
+		{
+			Input: `{"user": "foobar", "scores": [{"name": "programming", "result": 0}, {"name": "testing", "result": 10}]}`,
+			Query: `{.user, courses: [.scores[].name]}`,
+			Want:  `{"user":"foobar","courses":["programming","testing"]}`,
 		},
 	}
 	for _, q := range queries {
-		testQuery(t, q)
-	}
-}
-
-func testQuery(t *testing.T, q QueryCase) {
-	t.Helper()
-	r, err := os.Open("testdata/sample.json")
-	if err != nil {
-		t.Fatalf("fail to open sample file")
-	}
-	defer r.Close()
-
-	got, err := Filter(r, q.Query)
-	if err != nil {
-		t.Errorf("%s: unexpected error: %s", q.Query, err)
-		return
-	}
-	if got != q.Want {
-		t.Errorf("%s: result mismatched! want %s, got %s", q.Query, q.Want, got)
+		got, err := Filter(strings.NewReader(q.Input), q.Query)
+		if err != nil {
+			t.Errorf("%s: unexpected error: %s", q.Query, err)
+			continue
+		}
+		if got != q.Want {
+			t.Errorf("%s: result mismatched! want %q, got %q", q.Query, q.Want, got)
+		}
 	}
 }

@@ -92,7 +92,7 @@ func (r *reader) object(q Query) error {
 		if err != nil {
 			return err
 		}
-		if err = r.traverse(q, key); err != nil {
+		if err = r.filter(q, key); err != nil {
 			return err
 		}
 		if err := r.endObject(); err != nil {
@@ -139,7 +139,7 @@ func (r *reader) array(q Query) error {
 		return err
 	}
 	for i := 0; ; i++ {
-		err := r.traverse(q, strconv.Itoa(i))
+		err := r.filter(q, strconv.Itoa(i))
 		if err != nil {
 			return err
 		}
@@ -167,26 +167,24 @@ func (r *reader) endArray() error {
 	return nil
 }
 
-func (r *reader) traverse(q Query, key string) error {
+func (r *reader) filter(q Query, key string) error {
 	next, err := q.Next(key)
 	if err != nil {
 		return r.Read(KeepAll)
 	}
-	var wrapped bool
-	if wrapped = next == nil; wrapped {
+	if next == nil && q != KeepAll {
 		r.wrap()
+		defer r.update(q, key)
 		next = KeepAll
 	}
-	if err = r.Read(next); err != nil {
-		return err
+	return r.Read(next)
+}
+
+func (r *reader) update(q Query, key string) {
+	str := r.unwrap()
+	if s, ok := q.(setter); ok {
+		s.set(str)
 	}
-	if wrapped {
-		str := r.unwrap()
-		if s, ok := q.(setter); ok {
-			s.set(str)
-		}
-	}
-	return nil
 }
 
 func (r *reader) literal() (string, error) {
@@ -387,21 +385,23 @@ func (r *reader) malformed(msg string, args ...interface{}) error {
 }
 
 func canObject(q Query) error {
-	switch q.(type) {
-	case *all, *ident, *any, *object, *array:
-		return nil
-	default:
-		return invalidQueryForType("object")
-	}
+	// switch q.(type) {
+	// case *all, *ident, *any, *object, *array:
+	// 	return nil
+	// default:
+	// 	return invalidQueryForType("object")
+	// }
+	return nil
 }
 
 func canArray(q Query) error {
-	switch q.(type) {
-	case *all, *index:
-		return nil
-	default:
-		return invalidQueryForType("array")
-	}
+	// switch q.(type) {
+	// case *all, *index, *array:
+	// 	return nil
+	// default:
+	// 	return invalidQueryForType("array")
+	// }
+	return nil
 }
 
 type writer struct {
