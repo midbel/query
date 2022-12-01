@@ -5,11 +5,6 @@ import (
 	"testing"
 )
 
-type QueryCase struct {
-	Query string
-	Want  string
-}
-
 func TestFilter(t *testing.T) {
 	queries := []struct {
 		Input string
@@ -17,9 +12,34 @@ func TestFilter(t *testing.T) {
 		Want  string
 	}{
 		{
+			Input: `"foobar"`,
+			Query: `.`,
+			Want:  `"foobar"`,
+		},
+		{
+			Input: `3.14e-15`,
+			Query: `.`,
+			Want:  `3.14e-15`,
+		},
+		{
+			Input: `null`,
+			Query: `.`,
+			Want:  `null`,
+		},
+		{
+			Input: `{"user": "foobar"}`,
+			Query: `.`,
+			Want:  `{"user":"foobar"}`,
+		},
+		{
 			Input: `{"user": "foobar", "number": 42}`,
 			Query: `.user`,
 			Want:  `"foobar"`,
+		},
+		{
+			Input: `{"user": {"name": "foobar", "age": 42, "active": true}}`,
+			Query: `.user`,
+			Want:  `{"name":"foobar","age":42,"active":true}`,
 		},
 		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
