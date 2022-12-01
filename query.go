@@ -60,11 +60,18 @@ func (i *index) Next(ident string) (Query, error) {
 }
 
 func (i *index) Get() string {
+	if i.next != nil {
+		return i.next.Get()
+	}
+	if len(i.values) == 1 {
+		return slices.Fst(i.values)
+	}
 	var str strings.Builder
 	str.WriteRune('[')
 	for j := range i.values {
 		if j > 0 {
 			str.WriteRune(',')
+			str.WriteRune(' ')
 		}
 		str.WriteString(i.values[j])
 	}
@@ -81,13 +88,14 @@ func (i *index) set(str string) {
 }
 
 type any struct {
-	list   []Query
-	values []string
+	list []Query
+	last Query
 }
 
 func (a *any) Next(ident string) (Query, error) {
 	for _, f := range a.list {
 		if n, err := f.Next(ident); err == nil {
+			a.last = f
 			return n, nil
 		}
 	}
@@ -97,28 +105,36 @@ func (a *any) Next(ident string) (Query, error) {
 func (a *any) Get() string {
 	var str strings.Builder
 	str.WriteRune('[')
-	for i := range a.values {
+	for i := range a.list {
 		if i > 0 {
 			str.WriteRune(',')
+			str.WriteRune(' ')
 		}
-		str.WriteString(a.values[i])
+		str.WriteString(a.list[i].Get())
 	}
 	str.WriteRune(']')
 	return str.String()
 }
 
 func (a *any) set(str string) {
-	a.values = append(a.values, str)
+	if s, ok := a.last.(setter); ok {
+		s.set(str)
+		a.last = nil
+	}
 }
 
 func (a *any) get() []string {
-	return a.values
+	var values []string
+	for i := range a.list {
+		values = append(values, a.list[i].get()...)
+	}
+	return values
 }
 
 type ident struct {
-	ident string
-	value string
-	next  Query
+	ident  string
+	values []string
+	next   Query
 }
 
 func (i *ident) Next(ident string) (Query, error) {
@@ -132,17 +148,29 @@ func (i *ident) Get() string {
 	if i.next != nil {
 		return i.next.Get()
 	}
-	return i.value
+	if len(i.values) == 1 {
+		return slices.Fst(i.values)
+	}
+	var str strings.Builder
+	str.WriteRune('[')
+	for j := range i.values {
+		if j > 0 {
+			str.WriteRune(',')
+			str.WriteRune(' ')
+		}
+		str.WriteString(i.values[j])
+	}
+	str.WriteRune(']')
+	return str.String()
 }
 
 func (i *ident) set(str string) {
-	i.value = str
+	i.values = append(i.values, str)
 }
 
 func (i *ident) get() []string {
-	list := []string{i.value}
 	if i.next == nil {
-		return list
+		return i.values
 	}
 	return i.next.get()
 }
@@ -169,11 +197,14 @@ func (a *array) Get() string {
 	for i := range a.list {
 		if i > 0 {
 			str.WriteRune(',')
+			str.WriteRune(' ')
 		}
+		// str.WriteString(a.list[i].Get())
 		vs := a.list[i].get()
 		for i := range vs {
 			if i > 0 {
 				str.WriteRune(',')
+				str.WriteRune(' ')
 			}
 			str.WriteString(vs[i])
 		}
@@ -229,16 +260,19 @@ func (o *object) Get() string {
 	for i, vs := range values {
 		if i > 0 {
 			str.WriteRune(',')
+			str.WriteRune(' ')
 		}
 		str.WriteRune('{')
 		for j, k := range o.keys {
 			if j > 0 {
 				str.WriteRune(',')
+				str.WriteRune(' ')
 			}
 			str.WriteRune('"')
 			str.WriteString(k)
 			str.WriteRune('"')
 			str.WriteRune(':')
+			str.WriteRune(' ')
 			str.WriteString(vs[j])
 		}
 		str.WriteRune('}')
