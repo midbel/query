@@ -59,6 +59,14 @@ func prepare(r io.Reader) *reader {
 }
 
 func (r *reader) Read(q Query) error {
+	if q == keepAll {
+		r.wrap()
+		defer r.update(q)
+	}
+	return r.traverse(q)
+}
+
+func (r *reader) traverse(q Query) error {
 	c, err := r.read()
 	if err != nil {
 		return err
@@ -135,6 +143,9 @@ func (r *reader) key() (string, error) {
 }
 
 func (r *reader) array(q Query) error {
+	r.enter()
+	defer r.leave()
+
 	if err := canArray(q); err != nil {
 		return err
 	}
@@ -170,17 +181,17 @@ func (r *reader) endArray() error {
 func (r *reader) filter(q Query, key string) error {
 	next, err := q.Next(key)
 	if err != nil {
-		return r.Read(KeepAll)
+		return r.traverse(discard)
 	}
-	if next == nil && q != KeepAll {
+	if next == nil && q != keepAll {
 		r.wrap()
-		defer r.update(q, key)
-		next = KeepAll
+		defer r.update(q)
+		next = keepAll
 	}
-	return r.Read(next)
+	return r.traverse(next)
 }
 
-func (r *reader) update(q Query, key string) {
+func (r *reader) update(q Query) {
 	str := r.unwrap()
 	if s, ok := q.(setter); ok {
 		s.set(str)
@@ -368,7 +379,7 @@ func (r *reader) wrap() {
 }
 
 func (r *reader) unwrap() string {
-	w, ok := r.inner.(*writer)
+	w, ok := r.inner.(unwrapper)
 	if ok {
 		r.inner = w.Unwrap()
 		return w.String()
@@ -404,21 +415,51 @@ func canArray(q Query) error {
 	return nil
 }
 
-type writer struct {
+type unwrapper interface {
+	fmt.Stringer
+	Unwrap() io.RuneScanner
+}
+
+type prettyfy struct {
+	io.RuneScanner
+	buf bytes.Buffer
+}
+
+func (w *prettyfy) String() string {
+	return w.buf.String()
+}
+
+func (w *prettyfy) ReadRune() (rune, int, error) {
+	return w.RuneScanner.ReadRune()
+}
+
+func (w *prettyfy) UnreadRune() error {
+	return w.RuneScanner.UnreadRune()
+}
+
+func (w *prettyfy) Unwrap() io.RuneScanner {
+	return w.RuneScanner
+}
+
+type compact struct {
 	io.RuneScanner
 	buf bytes.Buffer
 }
 
 func wrap(rs io.RuneScanner) io.RuneScanner {
-	if _, ok := rs.(*writer); ok {
+	if _, ok := rs.(*compact); ok {
 		return rs
 	}
-	return &writer{
+	return &compact{
 		RuneScanner: rs,
 	}
 }
 
-func (w *writer) ReadRune() (rune, int, error) {
+func (w *compact) String() string {
+	return w.buf.String()
+}
+
+func (w *compact) ReadRune() (rune, int, error) {
 	c, z, err := w.RuneScanner.ReadRune()
 	if err == nil && !jsonBlank(c) {
 		w.buf.WriteRune(c)
@@ -426,20 +467,16 @@ func (w *writer) ReadRune() (rune, int, error) {
 	return c, z, err
 }
 
-func (w *writer) UnreadRune() error {
+func (w *compact) UnreadRune() error {
 	err := w.RuneScanner.UnreadRune()
-	if err == nil {
+	if err == nil && w.buf.Len() > 0 {
 		w.buf.Truncate(w.buf.Len() - 1)
 	}
 	return err
 }
 
-func (w *writer) Unwrap() io.RuneScanner {
+func (w *compact) Unwrap() io.RuneScanner {
 	return w.RuneScanner
-}
-
-func (w *writer) String() string {
-	return w.buf.String()
 }
 
 func jsonBlank(r rune) bool {

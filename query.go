@@ -20,7 +20,10 @@ type setter interface {
 
 var ErrSkip = errors.New("skip")
 
-var KeepAll Query = &all{}
+var (
+	keepAll Query = &all{}
+	discard Query = &all{}
+)
 
 type all struct {
 	value string

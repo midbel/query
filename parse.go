@@ -14,7 +14,7 @@ type Parser struct {
 
 func Parse(str string) (Query, error) {
 	if str == "." {
-		return KeepAll, nil
+		return keepAll, nil
 	}
 	p := Parser{
 		scan: Scan(str),

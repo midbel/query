@@ -99,7 +99,7 @@ func TestFilter(t *testing.T) {
 			continue
 		}
 		if got != q.Want {
-			t.Errorf("%s: result mismatched! want %q, got %q", q.Query, q.Want, got)
+			t.Errorf("%q: result mismatched! want %s, got %s", q.Query, q.Want, got)
 		}
 	}
 }

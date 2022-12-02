@@ -13,17 +13,17 @@ func main() {
 	flag.Parse()
 
 	var r io.Reader = os.Stdin
-	if f, err := os.Open(flag.Arg(0)); err == nil {
+	if f, err := os.Open(flag.Arg(1)); err == nil {
 		defer f.Close()
 		r = f
 	} else {
-		if flag.Arg(0) != "" && flag.Arg(0) != "-" {
+		if flag.Arg(1) != "" {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
 	}
 
-	res, err := query.Filter(r, flag.Arg(1))
+	res, err := query.Filter(r, flag.Arg(0))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
