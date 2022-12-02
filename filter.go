@@ -435,27 +435,6 @@ type unwrapper interface {
 	Unwrap() io.RuneScanner
 }
 
-type prettyfy struct {
-	io.RuneScanner
-	buf bytes.Buffer
-}
-
-func (w *prettyfy) String() string {
-	return w.buf.String()
-}
-
-func (w *prettyfy) ReadRune() (rune, int, error) {
-	return w.RuneScanner.ReadRune()
-}
-
-func (w *prettyfy) UnreadRune() error {
-	return w.RuneScanner.UnreadRune()
-}
-
-func (w *prettyfy) Unwrap() io.RuneScanner {
-	return w.RuneScanner
-}
-
 type compact struct {
 	io.RuneScanner
 
