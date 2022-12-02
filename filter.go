@@ -42,8 +42,9 @@ type reader struct {
 	file  string
 	depth int
 
-	prev Position
-	curr Position
+	prev      Position
+	curr      Position
+	keepBlank bool
 }
 
 func prepare(r io.Reader) *reader {
@@ -63,7 +64,14 @@ func (r *reader) Read(q Query) error {
 		r.wrap()
 		defer r.update(q)
 	}
-	return r.traverse(q)
+	err := r.traverse(q)
+	if err != nil {
+		return err
+	}
+	if _, err = r.read(); err == nil {
+		return r.malformed("malformed JSON document: unexpected end")
+	}
+	return nil
 }
 
 func (r *reader) traverse(q Query) error {
@@ -199,6 +207,9 @@ func (r *reader) update(q Query) {
 }
 
 func (r *reader) literal() (string, error) {
+	r.toggleBlank()
+	defer r.toggleBlank()
+
 	var buf bytes.Buffer
 	for {
 		c, err := r.read()
@@ -219,10 +230,14 @@ func (r *reader) literal() (string, error) {
 	return buf.String(), nil
 }
 
+func (r *reader) toggleBlank() {
+	r.keepBlank = !r.keepBlank
+}
+
 func (r *reader) escape(buf *bytes.Buffer) error {
 	buf.WriteRune('\\')
 	switch c, _ := r.read(); c {
-	case 'n', 'f', 'b', 'r', '"', '\\':
+	case 'n', 'f', 'b', 'r', '"', '\\', '/':
 		buf.WriteRune(c)
 	case 'u':
 		buf.WriteRune(c)
@@ -364,7 +379,7 @@ func (r *reader) read() (rune, error) {
 			r.curr.Col = 0
 		}
 		r.curr.Col++
-		if !jsonBlank(c) {
+		if r.keepBlank || !jsonBlank(c) {
 			return c, err
 		}
 	}
@@ -443,7 +458,10 @@ func (w *prettyfy) Unwrap() io.RuneScanner {
 
 type compact struct {
 	io.RuneScanner
-	buf bytes.Buffer
+
+	last    rune
+	scanstr bool
+	buf     bytes.Buffer
 }
 
 func wrap(rs io.RuneScanner) io.RuneScanner {
@@ -459,10 +477,21 @@ func (w *compact) String() string {
 	return w.buf.String()
 }
 
+func (w *compact) toggle(c rune) {
+	if w.last != '\\' && c == '"' {
+		w.scanstr = !w.scanstr
+	}
+}
+
 func (w *compact) ReadRune() (rune, int, error) {
 	c, z, err := w.RuneScanner.ReadRune()
-	if err == nil && !jsonBlank(c) {
+	w.toggle(c)
+	if err == nil && w.keep(c) {
 		w.buf.WriteRune(c)
+		w.last = c
+		if !w.scanstr && jsonSep(c) {
+			w.buf.WriteRune(' ')
+		}
 	}
 	return c, z, err
 }
@@ -470,13 +499,26 @@ func (w *compact) ReadRune() (rune, int, error) {
 func (w *compact) UnreadRune() error {
 	err := w.RuneScanner.UnreadRune()
 	if err == nil && w.buf.Len() > 0 {
-		w.buf.Truncate(w.buf.Len() - 1)
+		var size int
+		if !w.scanstr && jsonSep(w.last) {
+			size++
+		}
+		size++
+		w.buf.Truncate(w.buf.Len() - size)
 	}
 	return err
 }
 
 func (w *compact) Unwrap() io.RuneScanner {
 	return w.RuneScanner
+}
+
+func (w *compact) keep(c rune) bool {
+	return !jsonBlank(c) || w.scanstr
+}
+
+func jsonSep(r rune) bool {
+	return r == ',' || r == ':'
 }
 
 func jsonBlank(r rune) bool {

@@ -247,16 +247,19 @@ func writeObject(keys []string, values [][]string) string {
 	for i, vs := range values {
 		if i > 0 {
 			str.WriteRune(',')
+			str.WriteRune(' ')
 		}
 		str.WriteRune('{')
 		for j, k := range keys {
 			if j > 0 {
 				str.WriteRune(',')
+				str.WriteRune(' ')
 			}
 			str.WriteRune('"')
 			str.WriteString(k)
 			str.WriteRune('"')
 			str.WriteRune(':')
+			str.WriteRune(' ')
 			str.WriteString(vs[j])
 		}
 		str.WriteRune('}')
@@ -273,6 +276,7 @@ func writeArray(values []string) string {
 	for i := range values {
 		if i > 0 {
 			str.WriteRune(',')
+			str.WriteRune(' ')
 		}
 		str.WriteString(values[i])
 	}
