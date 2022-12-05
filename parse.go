@@ -12,13 +12,7 @@ type Parser struct {
 	peek Token
 }
 
-func Parse(str string) (F, error) {
-	// if str == "." {
-	// 	ch := chain{
-	// 		queries: []Query{keepAll},
-	// 	}
-	// 	return &ch, nil
-	// }
+func Parse(str string) (Filter, error) {
 	p := Parser{
 		scan: Scan(str),
 	}
@@ -27,11 +21,11 @@ func Parse(str string) (F, error) {
 	return p.Parse()
 }
 
-func (p *Parser) Parse() (F, error) {
+func (p *Parser) Parse() (Filter, error) {
 	return p.parseChain()
 }
 
-func (p *Parser) parseChain() (F, error) {
+func (p *Parser) parseChain() (Filter, error) {
 	var ch chain
 	for !p.done() && !p.is(Pipe) {
 		q, err := p.parse()

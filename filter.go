@@ -18,7 +18,7 @@ func (p Position) String() string {
 	return fmt.Sprintf("%d:%d", p.Line, p.Col)
 }
 
-func Filter(r io.Reader, query string) (string, error) {
+func Execute(r io.Reader, query string) (string, error) {
 	q, err := Parse(query)
 	if err != nil {
 		return "", err

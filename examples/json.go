@@ -23,7 +23,7 @@ func main() {
 		}
 	}
 
-	res, err := query.Filter(r, flag.Arg(0))
+	res, err := query.Execute(r, flag.Arg(0))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -98,7 +98,7 @@ func TestFilter(t *testing.T) {
 		},
 	}
 	for _, q := range queries {
-		got, err := Filter(strings.NewReader(q.Input), q.Query)
+		got, err := Execute(strings.NewReader(q.Input), q.Query)
 		if err != nil {
 			t.Errorf("%s: unexpected error: %s", q.Query, err)
 			continue

@@ -20,7 +20,7 @@ type setter interface {
 	set(string)
 }
 
-type F interface {
+type Filter interface {
 	Filter(io.Reader) (io.Reader, error)
 }
 
