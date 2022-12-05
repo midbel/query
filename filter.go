@@ -23,11 +23,12 @@ func Filter(r io.Reader, query string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = Execute(r, q)
-	if err != nil {
+	if r, err = q.Filter(r); err != nil {
 		return "", err
 	}
-	return q.Get(), nil
+	var w bytes.Buffer
+	_, err = io.Copy(&w, r)
+	return w.String(), err
 }
 
 func Execute(r io.Reader, q Query) error {
@@ -187,6 +188,9 @@ func (r *reader) endArray() error {
 }
 
 func (r *reader) filter(q Query, key string) error {
+	if q == nil {
+		return r.traverse(q)
+	}
 	next, err := q.Next(key)
 	if err != nil {
 		return r.traverse(discard)
@@ -456,12 +460,6 @@ func (w *compact) String() string {
 	return w.buf.String()
 }
 
-func (w *compact) toggle(c rune) {
-	if w.last != '\\' && c == '"' {
-		w.scanstr = !w.scanstr
-	}
-}
-
 func (w *compact) ReadRune() (rune, int, error) {
 	c, z, err := w.RuneScanner.ReadRune()
 	w.toggle(c)
@@ -494,6 +492,12 @@ func (w *compact) Unwrap() io.RuneScanner {
 
 func (w *compact) keep(c rune) bool {
 	return !jsonBlank(c) || w.scanstr
+}
+
+func (w *compact) toggle(c rune) {
+	if w.last != '\\' && c == '"' {
+		w.scanstr = !w.scanstr
+	}
 }
 
 func jsonSep(r rune) bool {

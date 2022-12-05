@@ -7,6 +7,8 @@ import (
 func TestParse(t *testing.T) {
 	data := []string{
 		`.`,
+		`. | .ident`,
+		`.ident | .ident`,
 		`.ident`,
 		`."ident"`,
 		`.'ident'`,
@@ -24,6 +26,7 @@ func TestParse(t *testing.T) {
 		`{.ident}`,
 		`[]`,
 		`[.ident]`,
+		`[.ident] | {data: .ident} | .data`,
 	}
 	for _, d := range data {
 		_, err := Parse(d)
@@ -35,6 +38,8 @@ func TestParse(t *testing.T) {
 
 func TestParse_Error(t *testing.T) {
 	data := []string{
+		`. |`,
+		`|`,
 		`ident`,
 		`.ident.`,
 		`._ident`,

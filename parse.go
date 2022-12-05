@@ -12,10 +12,13 @@ type Parser struct {
 	peek Token
 }
 
-func Parse(str string) (Query, error) {
-	if str == "." {
-		return keepAll, nil
-	}
+func Parse(str string) (F, error) {
+	// if str == "." {
+	// 	ch := chain{
+	// 		queries: []Query{keepAll},
+	// 	}
+	// 	return &ch, nil
+	// }
 	p := Parser{
 		scan: Scan(str),
 	}
@@ -24,13 +27,42 @@ func Parse(str string) (Query, error) {
 	return p.Parse()
 }
 
-func (p *Parser) Parse() (Query, error) {
-	return p.parse()
+func (p *Parser) Parse() (F, error) {
+	return p.parseChain()
+}
+
+func (p *Parser) parseChain() (F, error) {
+	var ch chain
+	for !p.done() && !p.is(Pipe) {
+		q, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		ch.queries = append(ch.queries, q)
+		switch p.curr.Type {
+		case Pipe:
+			p.next()
+			if p.is(Eof) {
+				return nil, fmt.Errorf("parser: expected query after '|'")
+			}
+		case Eof:
+		default:
+			return nil, fmt.Errorf("parser: expected '|' or eof")
+		}
+	}
+	if !p.is(Eof) {
+		return nil, fmt.Errorf("parser: expected end of input")
+	}
+	return &ch, nil
 }
 
 func (p *Parser) parse() (Query, error) {
+	if p.is(Dot) && (p.peekIs(Pipe) || p.peekIs(Eof)) {
+		p.next()
+		return keepAll, nil
+	}
 	var list []Query
-	for !p.done() {
+	for !p.done() && !p.is(Pipe) {
 		curr, err := p.parseQuery()
 		if err != nil {
 			return nil, err
@@ -42,7 +74,7 @@ func (p *Parser) parse() (Query, error) {
 			if p.is(Eof) {
 				return nil, fmt.Errorf("parser: expected query after ','")
 			}
-		case Eof:
+		case Eof, Pipe:
 		default:
 			return nil, fmt.Errorf("parser: expected ',' or eof")
 		}
@@ -88,7 +120,7 @@ func (p *Parser) parseQuery() (Query, error) {
 		return nil, err
 	}
 	switch p.curr.Type {
-	case Eof, Comma, Rsquare, Rcurly:
+	case Eof, Comma, Rsquare, Rcurly, Pipe:
 	default:
 		return nil, fmt.Errorf("query: expected ',' or end of input")
 	}
@@ -163,7 +195,7 @@ func (p *Parser) parseObject() (Query, error) {
 	}
 	p.next()
 	switch p.curr.Type {
-	case Comma, Eof, Rsquare, Rcurly:
+	case Comma, Eof, Rsquare, Rcurly, Pipe:
 	default:
 		return nil, fmt.Errorf("object: unexpected character %s", p.curr)
 	}
@@ -182,7 +214,7 @@ func (p *Parser) parseIdent() (Query, error) {
 		id.next, err = p.parseQuery()
 	case Lsquare:
 		id.next, err = p.parseIndex()
-	case Comma, Eof, Rcurly, Rsquare:
+	case Comma, Eof, Rcurly, Rsquare, Pipe:
 	default:
 		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
 	}
@@ -223,7 +255,7 @@ func (p *Parser) parseIndex() (Query, error) {
 	switch p.curr.Type {
 	case Dot:
 		idx.next, err = p.parseQuery()
-	case Comma, Eof, Rsquare, Rcurly:
+	case Comma, Eof, Rsquare, Rcurly, Pipe:
 	default:
 		err = fmt.Errorf("index: unexpected character %s", p.curr)
 	}
@@ -235,6 +267,10 @@ func (p *Parser) expect(kind rune, msg string) error {
 		return fmt.Errorf(msg)
 	}
 	return nil
+}
+
+func (p *Parser) peekIs(kind rune) bool {
+	return p.peek.Type == kind
 }
 
 func (p *Parser) is(kind rune) bool {
@@ -255,6 +291,7 @@ const (
 	Literal
 	Number
 	Dot
+	Recurse
 	Comma
 	Lparen
 	Rparen
@@ -263,6 +300,7 @@ const (
 	Lcurly
 	Rcurly
 	Colon
+	Pipe
 	Invalid
 )
 
@@ -277,6 +315,8 @@ func (t Token) String() string {
 		return "<eof>"
 	case Dot:
 		return "<dot>"
+	case Recurse:
+		return "<recurse>"
 	case Comma:
 		return "<comma>"
 	case Lparen:
@@ -293,6 +333,8 @@ func (t Token) String() string {
 		return "<rcurly>"
 	case Colon:
 		return "<colon>"
+	case Pipe:
+		return "<pipe>"
 	case Invalid:
 		if t.Literal != "" {
 			return fmt.Sprintf("invalid(%s)", t.Literal)
@@ -392,6 +434,10 @@ func (s *Scanner) scanDelim(tok *Token) {
 		tok.Type = Comma
 	case '.':
 		tok.Type = Dot
+		if s.peek() == s.char {
+			s.read()
+			tok.Type = Recurse
+		}
 	case '(':
 		tok.Type = Lparen
 	case ')':
@@ -400,6 +446,8 @@ func (s *Scanner) scanDelim(tok *Token) {
 		tok.Type = Lsquare
 	case ']':
 		tok.Type = Rsquare
+	case '|':
+		tok.Type = Pipe
 	default:
 		tok.Type = Invalid
 	}
@@ -472,7 +520,7 @@ func isGroup(r rune) bool {
 }
 
 func isPunct(r rune) bool {
-	return r == '.' || r == ',' || r == ':'
+	return r == '.' || r == ',' || r == ':' || r == '|'
 }
 
 func isDelim(r rune) bool {

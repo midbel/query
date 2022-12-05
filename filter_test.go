@@ -32,6 +32,11 @@ func TestFilter(t *testing.T) {
 			Want:  `{"user": "foo bar"}`,
 		},
 		{
+			Input: `{"user": "foo bar"}`,
+			Query: `. | .user`,
+			Want:  `"foo bar"`,
+		},
+		{
 			Input: `{"user": "foobar", "number": 42}`,
 			Query: `.user`,
 			Want:  `"foobar"`,

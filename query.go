@@ -1,8 +1,10 @@
 package query
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/midbel/slices"
@@ -18,12 +20,39 @@ type setter interface {
 	set(string)
 }
 
+type F interface {
+	Filter(io.Reader) (io.Reader, error)
+}
+
 var ErrSkip = errors.New("skip")
 
 var (
 	keepAll Query = &all{}
 	discard Query = &all{}
 )
+
+type chain struct {
+	queries []Query
+}
+
+func (c *chain) At(n int) (string, error) {
+	if n < 0 || n >= len(c.queries) {
+		return "", fmt.Errorf("bad index")
+	}
+	return slices.At(c.queries, n).Get(), nil
+}
+
+func (c *chain) Filter(r io.Reader) (io.Reader, error) {
+	for _, q := range c.queries {
+		err := Execute(r, q)
+		if err != nil {
+			return nil, err
+		}
+		got := q.Get()
+		r = bytes.NewReader([]byte(got))
+	}
+	return r, nil
+}
 
 type all struct {
 	value string
