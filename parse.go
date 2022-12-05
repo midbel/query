@@ -27,7 +27,7 @@ func (p *Parser) Parse() (Filter, error) {
 
 func (p *Parser) parseChain() (Filter, error) {
 	var ch chain
-	for !p.done() && !p.is(Pipe) {
+	for !p.done() {
 		q, err := p.parse()
 		if err != nil {
 			return nil, err
@@ -134,14 +134,14 @@ func (p *Parser) parseArray() (Query, error) {
 		case Comma:
 			p.next()
 			if p.is(Rsquare) {
-				return nil, fmt.Errorf("array constructor: expected query after comma")
+				return nil, fmt.Errorf("array: expected query after comma")
 			}
 		case Rsquare:
 		default:
-			return nil, fmt.Errorf("array constructor: expected ',' or '}'")
+			return nil, fmt.Errorf("array: expected ',' or '}'")
 		}
 	}
-	if err := p.expect(Rsquare, "array constructor: expected ']' at end"); err != nil {
+	if err := p.expect(Rsquare, "array: expected ']' at end"); err != nil {
 		return nil, err
 	}
 	p.next()
@@ -188,11 +188,6 @@ func (p *Parser) parseObject() (Query, error) {
 		return nil, err
 	}
 	p.next()
-	switch p.curr.Type {
-	case Comma, Eof, Rsquare, Rcurly, Pipe:
-	default:
-		return nil, fmt.Errorf("object: unexpected character %s", p.curr)
-	}
 	return &obj, nil
 }
 
