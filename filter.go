@@ -193,7 +193,7 @@ func (r *reader) filter(q Query, key string) error {
 	}
 	next, err := q.Next(key)
 	if err != nil {
-		return r.traverse(discard)
+		return r.traverse(next)
 	}
 	if next == nil && q != keepAll {
 		r.wrap()
@@ -415,6 +415,9 @@ func (r *reader) malformed(msg string, args ...interface{}) error {
 }
 
 func canObject(q Query) error {
+	// if q == nil {
+	// 	return nil
+	// }
 	// switch q.(type) {
 	// case *all, *ident, *any, *object, *array:
 	// 	return nil
@@ -425,6 +428,9 @@ func canObject(q Query) error {
 }
 
 func canArray(q Query) error {
+	// if q == nil {
+	// 	return nil
+	// }
 	// switch q.(type) {
 	// case *all, *index, *array:
 	// 	return nil
@@ -465,9 +471,9 @@ func (w *compact) ReadRune() (rune, int, error) {
 	w.toggle(c)
 	if err == nil && w.keep(c) {
 		w.buf.WriteRune(c)
-		w.last = c
 		if !w.scanstr && jsonSep(c) {
 			w.buf.WriteRune(' ')
+			w.last = c
 		}
 	}
 	return c, z, err
@@ -482,6 +488,7 @@ func (w *compact) UnreadRune() error {
 		}
 		size++
 		w.buf.Truncate(w.buf.Len() - size)
+		w.toggle(w.last)
 	}
 	return err
 }
@@ -495,9 +502,10 @@ func (w *compact) keep(c rune) bool {
 }
 
 func (w *compact) toggle(c rune) {
-	if w.last != '\\' && c == '"' {
+	if c == '"' && w.last != '\\' {
 		w.scanstr = !w.scanstr
 	}
+	w.last = c
 }
 
 func jsonSep(r rune) bool {
