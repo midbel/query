@@ -26,17 +26,14 @@ func Filter(r io.Reader, query string) (string, error) {
 	if r, err = q.Filter(r); err != nil {
 		return "", err
 	}
-	var w bytes.Buffer
-	_, err = io.Copy(&w, r)
-	return w.String(), err
+	tmp, err := io.ReadAll(r)
+	return string(tmp), err
 }
 
-func Execute(r io.Reader, q Query) error {
+func execute(r io.Reader, q Query) error {
 	rs := prepare(r)
 	return rs.Read(q)
 }
-
-var errDone = errors.New("done")
 
 type reader struct {
 	inner io.RuneScanner
@@ -113,7 +110,7 @@ func (r *reader) object(q Query) error {
 			return err
 		}
 		if err := r.endObject(); err != nil {
-			if errors.Is(err, errDone) {
+			if isDone(err) {
 				break
 			}
 			return err
@@ -164,7 +161,7 @@ func (r *reader) array(q Query) error {
 			return err
 		}
 		if err := r.endArray(); err != nil {
-			if errors.Is(err, errDone) {
+			if isDone(err) {
 				break
 			}
 			return err
@@ -414,29 +411,35 @@ func (r *reader) malformed(msg string, args ...interface{}) error {
 	}
 }
 
+var errDone = errors.New("done")
+
+func isDone(err error) bool {
+	return errors.Is(err, errDone)
+}
+
 func canObject(q Query) error {
-	// if q == nil {
-	// 	return nil
-	// }
-	// switch q.(type) {
-	// case *all, *ident, *any, *object, *array:
-	// 	return nil
-	// default:
-	// 	return invalidQueryForType("object")
-	// }
+	if q == nil {
+		return nil
+	}
+	switch q.(type) {
+	case *all, *ident, *any, *object, *array:
+		return nil
+	default:
+		return invalidQueryForType("object")
+	}
 	return nil
 }
 
 func canArray(q Query) error {
-	// if q == nil {
-	// 	return nil
-	// }
-	// switch q.(type) {
-	// case *all, *index, *array:
-	// 	return nil
-	// default:
-	// 	return invalidQueryForType("array")
-	// }
+	if q == nil {
+		return nil
+	}
+	switch q.(type) {
+	case *all, *index, *array:
+		return nil
+	default:
+		return invalidQueryForType("array")
+	}
 	return nil
 }
 

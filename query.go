@@ -24,12 +24,9 @@ type F interface {
 	Filter(io.Reader) (io.Reader, error)
 }
 
-var ErrSkip = errors.New("skip")
+var errSkip = errors.New("skip")
 
-var (
-	keepAll Query = &all{}
-	discard Query = &all{}
-)
+var keepAll Query = &all{}
 
 type chain struct {
 	queries []Query
@@ -44,7 +41,7 @@ func (c *chain) At(n int) (string, error) {
 
 func (c *chain) Filter(r io.Reader) (io.Reader, error) {
 	for _, q := range c.queries {
-		err := Execute(r, q)
+		err := execute(r, q)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +81,7 @@ func (i *ident) Next(ident string) (Query, error) {
 	if i.ident == ident {
 		return i.next, nil
 	}
-	return nil, ErrSkip
+	return nil, errSkip
 }
 
 func (i *ident) Get() string {
@@ -123,7 +120,7 @@ func (i *index) Next(ident string) (Query, error) {
 			return i.next, nil
 		}
 	}
-	return nil, ErrSkip
+	return nil, errSkip
 }
 
 func (i *index) Get() string {
@@ -160,7 +157,7 @@ func (a *any) Next(ident string) (Query, error) {
 			return n, nil
 		}
 	}
-	return nil, ErrSkip
+	return nil, errSkip
 }
 
 func (a *any) Get() string {
@@ -200,7 +197,7 @@ func (a *array) Next(ident string) (Query, error) {
 			return n, nil
 		}
 	}
-	return nil, ErrSkip
+	return nil, errSkip
 }
 
 func (a *array) Get() string {
@@ -240,7 +237,7 @@ func (o *object) Next(ident string) (Query, error) {
 			return n, err
 		}
 	}
-	return nil, ErrSkip
+	return nil, errSkip
 }
 
 func (o *object) Get() string {
