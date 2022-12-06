@@ -1,0 +1,76 @@
+{
+	"path": ".",
+	"directory": true,
+	"files": [
+		{
+			"name": "data",
+			"directory": true,
+			"files": [
+				{
+					"name": "sample.json",
+					"size": 520
+				},
+				{
+					"name": "filesystem.json",
+					"size": 932
+				}
+			]
+		},
+		{
+			"name": "testdata",
+			"directory": true,
+			"files": [
+				{
+					"name": "sample.json",
+					"size": 670
+				}
+			]
+		},
+		{
+			"name": "examples",
+			"directory": true,
+			"files": [
+				{
+					"name": "json.go",
+					"size": 440
+				}
+			]
+		},
+		{
+			"name": ".gitignore",
+			"size": 10
+		},
+		{
+			"name": "errors.go",
+			"size": 333
+		},
+		{
+			"name": "filter.go",
+			"size": 9248
+		},
+		{
+			"name": "filter_test.go",
+			"size": 2482
+		},
+		{
+			"name": "parse.go",
+			"size": 9051
+		},
+		{
+			"name": "parse_test.go",
+			"size": 908
+		},
+		{
+			"name": "query.go",
+			"size": 5061
+		},
+		{
+			"name": "go.mod",
+			"size": 81
+		},
+		{
+			"name": "go.sum",
+			"size": 167
+		}
+	]
+}

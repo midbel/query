@@ -156,6 +156,7 @@ func (p *Parser) parseObject() (Query, error) {
 	for !p.done() && !p.is(Rcurly) {
 		var ident string
 		switch p.curr.Type {
+		case Lparen:
 		case Dot:
 			ident = p.peek.Literal
 		case Literal:
@@ -167,6 +168,9 @@ func (p *Parser) parseObject() (Query, error) {
 			p.next()
 		default:
 			return nil, fmt.Errorf("object: expected '.' or literal")
+		}
+		if p.is(Lparen) {
+
 		}
 		q, err := p.parseQuery()
 		if err != nil {
@@ -279,6 +283,7 @@ const (
 	Eof rune = -(1 + iota)
 	Literal
 	Number
+	Root
 	Dot
 	Recurse
 	Comma
@@ -324,6 +329,8 @@ func (t Token) String() string {
 		return "<colon>"
 	case Pipe:
 		return "<pipe>"
+	case Root:
+		return "<root>"
 	case Invalid:
 		if t.Literal != "" {
 			return fmt.Sprintf("invalid(%s)", t.Literal)
@@ -413,6 +420,8 @@ func (s *Scanner) scanNumber(tok *Token) {
 
 func (s *Scanner) scanDelim(tok *Token) {
 	switch s.char {
+	case '$':
+		tok.Type = Root
 	case '{':
 		tok.Type = Lcurly
 	case '}':
@@ -509,7 +518,7 @@ func isGroup(r rune) bool {
 }
 
 func isPunct(r rune) bool {
-	return r == '.' || r == ',' || r == ':' || r == '|'
+	return r == '.' || r == ',' || r == ':' || r == '|' || r == '$'
 }
 
 func isDelim(r rune) bool {

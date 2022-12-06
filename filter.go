@@ -418,28 +418,28 @@ func isDone(err error) bool {
 }
 
 func canObject(q Query) error {
-	if q == nil {
-		return nil
-	}
-	switch q.(type) {
-	case *all, *ident, *any, *object, *array:
-		return nil
-	default:
-		return invalidQueryForType("object")
-	}
+	// if q == nil {
+	// 	return nil
+	// }
+	// switch q.(type) {
+	// case *all, *ident, *any, *object, *array:
+	// 	return nil
+	// default:
+	// 	return invalidQueryForType("object")
+	// }
 	return nil
 }
 
 func canArray(q Query) error {
-	if q == nil {
-		return nil
-	}
-	switch q.(type) {
-	case *all, *index, *array:
-		return nil
-	default:
-		return invalidQueryForType("array")
-	}
+	// if q == nil {
+	// 	return nil
+	// }
+	// switch q.(type) {
+	// case *all, *index, *array:
+	// 	return nil
+	// default:
+	// 	return invalidQueryForType("array")
+	// }
 	return nil
 }
 

@@ -14,6 +14,7 @@ type Query interface {
 	Next(string) (Query, error)
 	Get() string
 	get() []string
+	clear()
 }
 
 type setter interface {
@@ -22,6 +23,7 @@ type setter interface {
 
 type Filter interface {
 	Filter(io.Reader) (io.Reader, error)
+	List(io.Reader) ([]string, error)
 }
 
 var errSkip = errors.New("skip")
@@ -39,6 +41,28 @@ func (c *chain) At(n int) (string, error) {
 	return slices.At(c.queries, n).Get(), nil
 }
 
+func (c *chain) List(r io.Reader) ([]string, error) {
+	if err := execute(r, slices.Fst(c.queries)); err != nil {
+		return nil, err
+	}
+	var (
+		list = slices.Fst(c.queries).get()
+		next []string
+	)
+	for _, q := range slices.Rest(c.queries) {
+		next = next[:0]
+		for _, str := range list {
+			if err := execute(strings.NewReader(str), q); err != nil {
+				return nil, err
+			}
+			next = append(next, q.get()...)
+			q.clear()
+		}
+		list = next
+	}
+	return list, nil
+}
+
 func (c *chain) Filter(r io.Reader) (io.Reader, error) {
 	for _, q := range c.queries {
 		err := execute(r, q)
@@ -49,6 +73,26 @@ func (c *chain) Filter(r io.Reader) (io.Reader, error) {
 		r = bytes.NewReader([]byte(got))
 	}
 	return r, nil
+}
+
+func (c *chain) Next(ident string) (Query, error) {
+	return nil, nil
+}
+
+func (c *chain) Get() string {
+	return ""
+}
+
+func (c *chain) get() []string {
+	return nil
+}
+
+func (c *chain) clear() {
+
+}
+
+func (c *chain) set(str string) {
+
 }
 
 type all struct {
@@ -69,6 +113,10 @@ func (a *all) get() []string {
 
 func (a *all) set(str string) {
 	a.value = str
+}
+
+func (a *all) clear() {
+	a.value = ""
 }
 
 type ident struct {
@@ -103,6 +151,13 @@ func (i *ident) get() []string {
 		return i.values
 	}
 	return i.next.get()
+}
+
+func (i *ident) clear() {
+	i.values = i.values[:0]
+	if i.next != nil {
+		i.next.clear()
+	}
 }
 
 type index struct {
@@ -145,6 +200,13 @@ func (i *index) set(str string) {
 	i.values = append(i.values, str)
 }
 
+func (i *index) clear() {
+	i.values = i.values[:0]
+	if i.next != nil {
+		i.next.clear()
+	}
+}
+
 type any struct {
 	list []Query
 	last Query
@@ -182,6 +244,13 @@ func (a *any) get() []string {
 		values = append(values, arr)
 	}
 	return values
+}
+
+func (a *any) clear() {
+	for _, q := range a.list {
+		q.clear()
+	}
+	a.last = nil
 }
 
 type array struct {
@@ -224,6 +293,13 @@ func (a *array) set(str string) {
 	}
 }
 
+func (a *array) clear() {
+	for _, q := range a.list {
+		q.clear()
+	}
+	a.last = nil
+}
+
 type object struct {
 	fields map[string]Query
 	keys   []string
@@ -257,12 +333,24 @@ func (o *object) set(str string) {
 }
 
 func (o *object) get() []string {
-	var values []string
+	var values [][]string
 	for _, k := range o.keys {
 		q := o.fields[k]
-		values = append(values, q.get()...)
+		values = append(values, q.get())
 	}
-	return values
+	var list []string
+	for _, vs := range slices.Combine(values...) {
+		str := writeObject(o.keys, [][]string{vs})
+		list = append(list, str)
+	}
+	return list
+}
+
+func (o *object) clear() {
+	o.keys = o.keys[:0]
+	for _, q := range o.fields {
+		q.clear()
+	}
 }
 
 func writeObject(keys []string, values [][]string) string {

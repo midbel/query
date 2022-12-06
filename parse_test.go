@@ -27,6 +27,8 @@ func TestParse(t *testing.T) {
 		`[]`,
 		`[.ident]`,
 		`[.ident] | {data: .ident} | .data`,
+		`.ident[] | {x: .ident, y: (.ident | .ident)}`,
+		`[.ident, (.ident | .ident), .ident]`,
 	}
 	for _, d := range data {
 		_, err := Parse(d)
