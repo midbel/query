@@ -55,26 +55,24 @@ func debug(w io.Writer, q Query, level int) {
 		}
 		fmt.Fprintf(w, "%s]", prefix)
 		fmt.Fprintln(w)
-	case *transform:
-		indent := strings.Repeat(prefix, 2) + " "
-		fmt.Fprintf(w, "%stransform()[", prefix)
+	case *pipeline:
+		fmt.Fprintf(w, "%spipeline()[", prefix)
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "%squery:", indent)
+		fmt.Fprintf(w, "%squery:", prefix+"- ")
 		fmt.Fprintln(w)
-		debug(w, q.Query, level+1)
-		fmt.Fprintf(w, "%snext:", indent)
+		debug(w, q.Query, level+2)
+		fmt.Fprintf(w, "%snext:", prefix+"- ")
 		fmt.Fprintln(w)
-		debug(w, q.next, level+1)
+		debug(w, q.next, level+2)
 		fmt.Fprintf(w, "%s]", prefix)
 		fmt.Fprintln(w)
 	case *object:
-		indent := strings.Repeat(prefix, 2) + " "
 		fmt.Fprintf(w, "%sobject()[", prefix)
 		fmt.Fprintln(w)
 		for k, v := range q.fields {
-			fmt.Fprintf(w, "%skey(%s):", indent, k)
+			fmt.Fprintf(w, "%skey(%s):", prefix+"- ", k)
 			fmt.Fprintln(w)
-			debug(w, v, level+1)
+			debug(w, v, level+2)
 		}
 		fmt.Fprintf(w, "%s]", prefix)
 		fmt.Fprintln(w)

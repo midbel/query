@@ -2,7 +2,6 @@ package query
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/midbel/slices"
@@ -19,21 +18,21 @@ type setter interface {
 	set(string)
 }
 
-type transform struct {
+type pipeline struct {
 	Query
 	next Query
 }
 
-func (t *transform) set(str string) {
-	if t.next != nil {
-		t.next.clear()
-		err := execute(strings.NewReader(str), t.next)
+func (p *pipeline) set(str string) {
+	if p.next != nil {
+		p.next.clear()
+		err := execute(strings.NewReader(str), p.next)
 		if err != nil {
 			return
 		}
-		str = t.next.Get()
+		str = p.next.Get()
 	}
-	if s, ok := t.Query.(setter); ok {
+	if s, ok := p.Query.(setter); ok {
 		s.set(str)
 	}
 }
@@ -126,7 +125,6 @@ func (i *index) Next(ident string) (Query, error) {
 }
 
 func (i *index) Get() string {
-	_ = fmt.Sprintf
 	if i.next != nil {
 		return i.next.Get()
 	}
@@ -321,7 +319,11 @@ func writeObject(keys []string, values [][]string) string {
 			str.WriteRune('"')
 			str.WriteRune(':')
 			str.WriteRune(' ')
-			str.WriteString(vs[j])
+			if j < len(vs) {
+				str.WriteString(vs[j])
+			} else {
+				str.WriteString("null")
+			}
 		}
 		str.WriteRune('}')
 	}

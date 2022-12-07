@@ -175,17 +175,17 @@ func (p *Parser) parseObject() (Query, error) {
 func (p *Parser) parsePipe(q Query) (Query, error) {
 	p.next()
 	var (
-		t   transform
+		pip pipeline
 		err error
 	)
-	t.Query = q
-	if t.next, err = p.parseQuery(); err != nil {
+	pip.Query = q
+	if pip.next, err = p.parseQuery(); err != nil {
 		return nil, err
 	}
 	if q == keepAll {
-		return t.next, nil
+		return pip.next, nil
 	}
-	return &t, nil
+	return &pip, nil
 }
 
 func (p *Parser) parseIdent() (Query, error) {

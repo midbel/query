@@ -104,6 +104,21 @@ func (r *reader) traverse(q Query) error {
 	return err
 }
 
+func (r *reader) key() (string, error) {
+	c, _ := r.read()
+	if !jsonQuote(c) {
+		return "", r.malformed("key: expected '\"' instead of %c", c)
+	}
+	key, err := r.literal()
+	if err != nil {
+		return "", err
+	}
+	if c, _ = r.read(); c != ':' {
+		return "", r.malformed("key: expected ':' instead of %c", c)
+	}
+	return key, nil
+}
+
 func (r *reader) object(q Query) error {
 	if err := canObject(q); err != nil {
 		return err
@@ -141,21 +156,6 @@ func (r *reader) endObject() error {
 		return r.malformed("object: expected ',' or '}'")
 	}
 	return nil
-}
-
-func (r *reader) key() (string, error) {
-	c, _ := r.read()
-	if !jsonQuote(c) {
-		return "", r.malformed("key: expected '\"' instead of %c", c)
-	}
-	key, err := r.literal()
-	if err != nil {
-		return "", err
-	}
-	if c, _ = r.read(); c != ':' {
-		return "", r.malformed("key: expected ':' instead of %c", c)
-	}
-	return key, nil
 }
 
 func (r *reader) array(q Query) error {
