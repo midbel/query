@@ -1,10 +1,8 @@
 package query
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/midbel/slices"
@@ -21,79 +19,28 @@ type setter interface {
 	set(string)
 }
 
-type Filter interface {
-	Filter(io.Reader) (io.Reader, error)
-	List(io.Reader) ([]string, error)
+type transform struct {
+	Query
+	next Query
+}
+
+func (t *transform) set(str string) {
+	if t.next != nil {
+		t.next.clear()
+		err := execute(strings.NewReader(str), t.next)
+		if err != nil {
+			return
+		}
+		str = t.next.Get()
+	}
+	if s, ok := t.Query.(setter); ok {
+		s.set(str)
+	}
 }
 
 var errSkip = errors.New("skip")
 
 var keepAll Query = &all{}
-
-type chain struct {
-	queries []Query
-}
-
-func (c *chain) At(n int) (string, error) {
-	if n < 0 || n >= len(c.queries) {
-		return "", fmt.Errorf("bad index")
-	}
-	return slices.At(c.queries, n).Get(), nil
-}
-
-func (c *chain) List(r io.Reader) ([]string, error) {
-	if err := execute(r, slices.Fst(c.queries)); err != nil {
-		return nil, err
-	}
-	var (
-		list = slices.Fst(c.queries).get()
-		next []string
-	)
-	for _, q := range slices.Rest(c.queries) {
-		next = next[:0]
-		for _, str := range list {
-			if err := execute(strings.NewReader(str), q); err != nil {
-				return nil, err
-			}
-			next = append(next, q.get()...)
-			q.clear()
-		}
-		list = next
-	}
-	return list, nil
-}
-
-func (c *chain) Filter(r io.Reader) (io.Reader, error) {
-	for _, q := range c.queries {
-		err := execute(r, q)
-		if err != nil {
-			return nil, err
-		}
-		got := q.Get()
-		r = bytes.NewReader([]byte(got))
-	}
-	return r, nil
-}
-
-func (c *chain) Next(ident string) (Query, error) {
-	return nil, nil
-}
-
-func (c *chain) Get() string {
-	return ""
-}
-
-func (c *chain) get() []string {
-	return nil
-}
-
-func (c *chain) clear() {
-
-}
-
-func (c *chain) set(str string) {
-
-}
 
 type all struct {
 	value string
@@ -247,8 +194,8 @@ func (a *any) get() []string {
 }
 
 func (a *any) clear() {
-	for _, q := range a.list {
-		q.clear()
+	for i := range a.list {
+		a.list[i].clear()
 	}
 	a.last = nil
 }
@@ -294,8 +241,8 @@ func (a *array) set(str string) {
 }
 
 func (a *array) clear() {
-	for _, q := range a.list {
-		q.clear()
+	for i := range a.list {
+		a.list[i].clear()
 	}
 	a.last = nil
 }
@@ -347,10 +294,10 @@ func (o *object) get() []string {
 }
 
 func (o *object) clear() {
-	o.keys = o.keys[:0]
 	for _, q := range o.fields {
 		q.clear()
 	}
+	o.keys = o.keys[:0]
 }
 
 func writeObject(keys []string, values [][]string) string {

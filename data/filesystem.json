@@ -12,7 +12,7 @@
 				},
 				{
 					"name": "filesystem.json",
-					"size": 932
+					"size": 1040
 				}
 			]
 		},
@@ -33,6 +33,14 @@
 				{
 					"name": "json.go",
 					"size": 440
+				},
+				{
+					"name": "get.go",
+					"size": 457
+				},
+				{
+					"name": "debug.go",
+					"size": 214
 				}
 			]
 		},
@@ -43,6 +51,10 @@
 		{
 			"name": "errors.go",
 			"size": 333
+		},
+		{
+			"name": "debug.go",
+			"size": 1922
 		},
 		{
 			"name": "filter.go",

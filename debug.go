@@ -91,4 +91,3 @@ func debug(w io.Writer, q Query, level int) {
 		fmt.Fprintln(w)
 	}
 }
-

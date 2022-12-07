@@ -12,7 +12,7 @@ type Parser struct {
 	peek Token
 }
 
-func Parse(str string) (Filter, error) {
+func Parse(str string) (Query, error) {
 	p := Parser{
 		scan: Scan(str),
 	}
@@ -21,42 +21,13 @@ func Parse(str string) (Filter, error) {
 	return p.Parse()
 }
 
-func (p *Parser) Parse() (Filter, error) {
-	return p.parseChain()
-}
-
-func (p *Parser) parseChain() (Filter, error) {
-	var ch chain
-	for !p.done() {
-		q, err := p.parse()
-		if err != nil {
-			return nil, err
-		}
-		ch.queries = append(ch.queries, q)
-		switch p.curr.Type {
-		case Pipe:
-			p.next()
-			if p.is(Eof) {
-				return nil, fmt.Errorf("parser: expected query after '|'")
-			}
-		case Eof:
-		default:
-			return nil, fmt.Errorf("parser: expected '|' or eof")
-		}
-	}
-	if !p.is(Eof) {
-		return nil, fmt.Errorf("parser: expected end of input")
-	}
-	return &ch, nil
+func (p *Parser) Parse() (Query, error) {
+	return p.parse()
 }
 
 func (p *Parser) parse() (Query, error) {
-	if p.is(Dot) && (p.peekIs(Pipe) || p.peekIs(Eof)) {
-		p.next()
-		return keepAll, nil
-	}
 	var list []Query
-	for !p.done() && !p.is(Pipe) {
+	for !p.done() {
 		curr, err := p.parseQuery()
 		if err != nil {
 			return nil, err
@@ -68,7 +39,7 @@ func (p *Parser) parse() (Query, error) {
 			if p.is(Eof) {
 				return nil, fmt.Errorf("parser: expected query after ','")
 			}
-		case Eof, Pipe:
+		case Eof:
 		default:
 			return nil, fmt.Errorf("parser: expected ',' or eof")
 		}
@@ -102,6 +73,10 @@ func (p *Parser) parseQuery() (Query, error) {
 
 	if dot {
 		switch p.curr.Type {
+		case Pipe:
+			curr, err = p.parsePipe(keepAll)
+		case Eof:
+			curr = keepAll
 		case Literal:
 			curr, err = p.parseIdent()
 		case Lsquare:
@@ -114,7 +89,7 @@ func (p *Parser) parseQuery() (Query, error) {
 		return nil, err
 	}
 	switch p.curr.Type {
-	case Eof, Comma, Rsquare, Rcurly, Pipe:
+	case Eof, Comma, Rsquare, Rcurly:
 	default:
 		return nil, fmt.Errorf("query: expected ',' or end of input")
 	}
@@ -125,11 +100,11 @@ func (p *Parser) parseArray() (Query, error) {
 	p.next()
 	var arr array
 	for !p.done() && !p.is(Rsquare) {
-		q, err := p.parseQuery()
+		next, err := p.parseQuery()
 		if err != nil {
 			return nil, err
 		}
-		arr.list = append(arr.list, q)
+		arr.list = append(arr.list, next)
 		switch p.curr.Type {
 		case Comma:
 			p.next()
@@ -145,6 +120,9 @@ func (p *Parser) parseArray() (Query, error) {
 		return nil, err
 	}
 	p.next()
+	if p.is(Pipe) {
+		return p.parsePipe(&arr)
+	}
 	return &arr, nil
 }
 
@@ -156,7 +134,6 @@ func (p *Parser) parseObject() (Query, error) {
 	for !p.done() && !p.is(Rcurly) {
 		var ident string
 		switch p.curr.Type {
-		case Lparen:
 		case Dot:
 			ident = p.peek.Literal
 		case Literal:
@@ -169,14 +146,11 @@ func (p *Parser) parseObject() (Query, error) {
 		default:
 			return nil, fmt.Errorf("object: expected '.' or literal")
 		}
-		if p.is(Lparen) {
-
-		}
-		q, err := p.parseQuery()
+		next, err := p.parseQuery()
 		if err != nil {
 			return nil, err
 		}
-		obj.fields[ident] = q
+		obj.fields[ident] = next
 		switch p.curr.Type {
 		case Comma:
 			p.next()
@@ -192,7 +166,26 @@ func (p *Parser) parseObject() (Query, error) {
 		return nil, err
 	}
 	p.next()
+	if p.is(Pipe) {
+		return p.parsePipe(&obj)
+	}
 	return &obj, nil
+}
+
+func (p *Parser) parsePipe(q Query) (Query, error) {
+	p.next()
+	var (
+		t   transform
+		err error
+	)
+	t.Query = q
+	if t.next, err = p.parseQuery(); err != nil {
+		return nil, err
+	}
+	if q == keepAll {
+		return t.next, nil
+	}
+	return &t, nil
 }
 
 func (p *Parser) parseIdent() (Query, error) {
@@ -207,7 +200,9 @@ func (p *Parser) parseIdent() (Query, error) {
 		id.next, err = p.parseQuery()
 	case Lsquare:
 		id.next, err = p.parseIndex()
-	case Comma, Eof, Rcurly, Rsquare, Pipe:
+	case Pipe:
+		return p.parsePipe(&id)
+	case Comma, Eof, Rcurly, Rsquare:
 	default:
 		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
 	}
@@ -248,7 +243,9 @@ func (p *Parser) parseIndex() (Query, error) {
 	switch p.curr.Type {
 	case Dot:
 		idx.next, err = p.parseQuery()
-	case Comma, Eof, Rsquare, Rcurly, Pipe:
+	case Pipe:
+		return p.parsePipe(&idx)
+	case Comma, Eof, Rsquare, Rcurly:
 	default:
 		err = fmt.Errorf("index: unexpected character %s", p.curr)
 	}

@@ -18,16 +18,26 @@ func (p Position) String() string {
 	return fmt.Sprintf("%d:%d", p.Line, p.Col)
 }
 
+func Filter(r io.Reader, query string) ([]string, error) {
+	q, err := Parse(query)
+	if err != nil {
+		return nil, err
+	}
+	if err := execute(r, q); err != nil {
+		return nil, err
+	}
+	return q.get(), nil
+}
+
 func Execute(r io.Reader, query string) (string, error) {
 	q, err := Parse(query)
 	if err != nil {
 		return "", err
 	}
-	if r, err = q.Filter(r); err != nil {
+	if err := execute(r, q); err != nil {
 		return "", err
 	}
-	tmp, err := io.ReadAll(r)
-	return string(tmp), err
+	return q.Get(), nil
 }
 
 func execute(r io.Reader, q Query) error {
