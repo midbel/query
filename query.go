@@ -23,6 +23,13 @@ type pipeline struct {
 	queries []Query
 }
 
+func PipeLine(q Query, next ...Query) Query {
+	return &pipeline{
+		Query:   q,
+		queries: next,
+	}
+}
+
 func (p *pipeline) set(str string) {
 	for _, q := range p.queries {
 		r := strings.NewReader(str)
@@ -43,6 +50,10 @@ var keepAll Query = &all{}
 
 type all struct {
 	value string
+}
+
+func All() Query {
+	return &all{}
 }
 
 func (a *all) Next(string) (Query, error) {
@@ -69,6 +80,17 @@ type ident struct {
 	ident  string
 	values []string
 	next   Query
+}
+
+func Ident(key string) Query {
+	return IdentNext(key, nil)
+}
+
+func IdentNext(key string, next Query) Query {
+	return &ident{
+		ident: key,
+		next:  next,
+	}
 }
 
 func (i *ident) Next(ident string) (Query, error) {
@@ -110,6 +132,17 @@ type index struct {
 	list   []string
 	values []string
 	next   Query
+}
+
+func Index(list []string) Query {
+	return IndexNext(list, nil)
+}
+
+func IndexNext(list []string, next Query) Query {
+	return &index{
+		list: list,
+		next: next,
+	}
 }
 
 func (i *index) Next(ident string) (Query, error) {
@@ -155,6 +188,12 @@ func (i *index) clear() {
 type any struct {
 	list []Query
 	last Query
+}
+
+func Any(list ...Query) Query {
+	return &any{
+		list: list,
+	}
 }
 
 func (a *any) Next(ident string) (Query, error) {
@@ -203,6 +242,12 @@ type array struct {
 	last Query
 }
 
+func Array(list ...Query) Query {
+	return &array{
+		list: list,
+	}
+}
+
 func (a *array) Next(ident string) (Query, error) {
 	for _, q := range a.list {
 		n, err := q.Next(ident)
@@ -248,6 +293,18 @@ func (a *array) clear() {
 type object struct {
 	fields map[string]Query
 	keys   []string
+}
+
+func Object(ks []string, qs []Query) Query {
+	var obj object
+	obj.fields = make(map[string]Query)
+	for i, k := range ks {
+		if i >= len(qs) {
+			break
+		}
+		obj.fields[k] = qs[i]
+	}
+	return &obj
 }
 
 func (o *object) Next(ident string) (Query, error) {

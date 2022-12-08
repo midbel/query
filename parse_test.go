@@ -15,6 +15,22 @@ func TestParse(t *testing.T) {
 			Want:  All(),
 		},
 		{
+			Input: `. | .foobar`,
+			Want:  nil,
+		},
+		{
+			Input: `.foo | . | .bar`,
+			Want:  nil,
+		},
+		{
+			Input: `.foo | .bar | .`,
+			Want:  nil,
+		},
+		{
+			Input: `.foo | .foo, .bar | .bar`,
+			Want:  Any(PipeLine(Ident("foo"), Ident("foo")), PipeLine(Ident("bar"), Ident("bar"))),
+		},
+		{
 			Input: `.foobar`,
 			Want:  Ident("foobar"),
 		},
@@ -79,8 +95,16 @@ func TestParse(t *testing.T) {
 			Want:  Object([]string{"foo", "bar"}, []Query{Ident("foo"), Ident("bar")}),
 		},
 		{
+			Input: `.foo | {.foo,.bar} | .bar`,
+			Want:  PipeLine(Ident("foo"), Object([]string{"foo", "bar"}, []Query{Ident("foo"), Ident("bar")}), Ident("bar")),
+		},
+		{
 			Input: `[.foo, .bar]`,
 			Want:  Array(Ident("foo"), Ident("bar")),
+		},
+		{
+			Input: `[[.foo],.bar]`,
+			Want:  Array(Array(Ident("foo")), Ident("bar")),
 		},
 		{
 			Input: `.foo.bar | [.foo0, .bar0] | .bar1`,

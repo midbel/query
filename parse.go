@@ -157,12 +157,22 @@ func (p *Parser) parseIndex() (Query, error) {
 }
 
 func (p *Parser) parsePipe(q Query) (Query, error) {
+	parse := func() (Query, error) {
+		switch p.curr.Type {
+		case Lsquare:
+			return p.parseArray()
+		case Lcurly:
+			return p.parseObject()
+		default:
+			return p.parseDot()
+		}
+	}
 	p.next()
 	pip := pipeline{
 		Query: q,
 	}
 	for !p.done() && !p.is(Rcurly) && !p.is(Rsquare) && !p.is(Comma) {
-		q, err := p.parseDot()
+		q, err := parse() // dot or array or object!!! TBW
 		if err != nil {
 			return nil, err
 		}
