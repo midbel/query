@@ -20,17 +20,17 @@ type setter interface {
 
 type pipeline struct {
 	Query
-	next Query
+	queries []Query
 }
 
 func (p *pipeline) set(str string) {
-	if p.next != nil {
-		p.next.clear()
-		err := execute(strings.NewReader(str), p.next)
-		if err != nil {
+	for _, q := range p.queries {
+		r := strings.NewReader(str)
+		q.clear()
+		if err := execute(r, q); err != nil {
 			return
 		}
-		str = p.next.Get()
+		str = q.Get()
 	}
 	if s, ok := p.Query.(setter); ok {
 		s.set(str)

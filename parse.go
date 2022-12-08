@@ -74,7 +74,8 @@ func (p *Parser) parseQuery() (Query, error) {
 	if dot {
 		switch p.curr.Type {
 		case Pipe:
-			curr, err = p.parsePipe(keepAll)
+			p.next()
+			curr, err = p.parseQuery()
 		case Eof:
 			curr = keepAll
 		case Literal:
@@ -89,7 +90,7 @@ func (p *Parser) parseQuery() (Query, error) {
 		return nil, err
 	}
 	switch p.curr.Type {
-	case Eof, Comma, Rsquare, Rcurly:
+	case Eof, Pipe, Comma, Rsquare, Rcurly:
 	default:
 		return nil, fmt.Errorf("query: expected ',' or end of input")
 	}
@@ -120,9 +121,6 @@ func (p *Parser) parseArray() (Query, error) {
 		return nil, err
 	}
 	p.next()
-	if p.is(Pipe) {
-		return p.parsePipe(&arr)
-	}
 	return &arr, nil
 }
 
@@ -166,24 +164,30 @@ func (p *Parser) parseObject() (Query, error) {
 		return nil, err
 	}
 	p.next()
-	if p.is(Pipe) {
-		return p.parsePipe(&obj)
-	}
 	return &obj, nil
 }
 
 func (p *Parser) parsePipe(q Query) (Query, error) {
 	p.next()
-	var (
-		pip pipeline
-		err error
-	)
-	pip.Query = q
-	if pip.next, err = p.parseQuery(); err != nil {
-		return nil, err
+	pip := pipeline{
+		Query: q,
 	}
-	if q == keepAll {
-		return pip.next, nil
+	for !p.done() && !p.is(Rcurly) && !p.is(Rsquare) && !p.is(Comma) {
+		q, err := p.parseQuery()
+		if err != nil {
+			return nil, err
+		}
+		pip.queries = append(pip.queries, q)
+		switch p.curr.Type {
+		case Pipe:
+			p.next()
+			if p.is(Eof) || p.is(Rcurly) || p.is(Rsquare) || p.is(Comma) {
+				return nil, fmt.Errorf("pipeline: expected query after '|")
+			}
+		case Eof, Rcurly, Rsquare, Comma:
+		default:
+			return nil, fmt.Errorf("pipeline: expected '|', '}', ']' or ','")
+		}
 	}
 	return &pip, nil
 }

@@ -58,12 +58,10 @@ func debug(w io.Writer, q Query, level int) {
 	case *pipeline:
 		fmt.Fprintf(w, "%spipeline()[", prefix)
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "%squery:", prefix+"- ")
-		fmt.Fprintln(w)
-		debug(w, q.Query, level+2)
-		fmt.Fprintf(w, "%snext:", prefix+"- ")
-		fmt.Fprintln(w)
-		debug(w, q.next, level+2)
+		debug(w, q.Query, level+1)
+		for i := range q.queries {
+			debug(w, q.queries[i], level+2)
+		}
 		fmt.Fprintf(w, "%s]", prefix)
 		fmt.Fprintln(w)
 	case *object:
