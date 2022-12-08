@@ -106,6 +106,11 @@ func TestFilter(t *testing.T) {
 			Query: `.items[] | {x: .name, y: .score, sub: [.items[] | {x: .name, y: .score}]}`,
 			Want:  `[{"x": "foo", "y": 10, "sub": [{"x": "foo0", "y": 0}]}, {"x": "bar", "y": 5, "sub": [{"x": "bar0", "y": 1}, {"x": "bar1", "y": 1}]}]`,
 		},
+		{
+			Input: `{"user": {"name": "foo bar", "score": 42}}`,
+			Query: `.user | . | .score`,
+			Want:  `42`,
+		},
 	}
 	for _, q := range queries {
 		got, err := Execute(strings.NewReader(q.Input), q.Query)
