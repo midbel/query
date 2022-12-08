@@ -118,6 +118,10 @@ func TestParse(t *testing.T) {
 			Input: `.foobar | [.foo, .bar]`,
 			Want:  PipeLine(Ident("foobar"), Array(Ident("foo"), Ident("bar"))),
 		},
+		{
+			Input: `.list[] | {.foo,.bar}`,
+			Want:  IdentNext("list", PipeLine(Index(nil), Object([]string{"foo", "bar"}, []Query{Ident("foo"), Ident("bar")}))),
+		},
 	}
 	for _, d := range data {
 		got, err := Parse(d.Input)

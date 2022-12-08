@@ -152,6 +152,8 @@ func (p *Parser) parseIndex() (Query, error) {
 	p.next()
 	if p.is(Dot) {
 		idx.next, err = p.parseQuery()
+	} else if p.is(Pipe) {
+		return p.parsePipe(&idx)
 	}
 	return &idx, err
 }
