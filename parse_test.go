@@ -122,6 +122,18 @@ func TestParse(t *testing.T) {
 			Input: `.list[] | {.foo,.bar}`,
 			Want:  IdentNext("list", PipeLine(Index(nil), Object([]string{"foo", "bar"}, []Query{Ident("foo"), Ident("bar")}))),
 		},
+		{
+			Input: `{.user, age: 42}`,
+			Want:  Object([]string{"user", "age"}, []Query{Ident("user"), Value("42")}),
+		},
+		{
+			Input: `{.user, active: true}`,
+			Want:  Object([]string{"user", "active"}, []Query{Ident("user"), Value("true")}),
+		},
+		{
+			Input: `[.scores, 42, "foobar"]`,
+			Want:  Array(Ident("scores"), Value("42"), Value("foobar")),
+		},
 	}
 	for _, d := range data {
 		got, err := Parse(d.Input)
@@ -151,6 +163,8 @@ func cmpQuery(q, other Query) error {
 		return cmpArray(q, other)
 	case *object:
 		return cmpObject(q, other)
+	case *literal:
+		return cmpLiteral(q, other)
 	default:
 		return fmt.Errorf("unsupported query type %T", q)
 	}
@@ -232,6 +246,21 @@ func cmpIdent(q, other Query) error {
 		return nil
 	}
 	return cmpQuery(i.next, j.next)
+}
+
+func cmpLiteral(q, other Query) error {
+	i, ok := q.(*literal)
+	if !ok {
+		return fmt.Errorf("literal: unexpected query type %T", q)
+	}
+	j, ok := other.(*literal)
+	if !ok {
+		return fmt.Errorf("literal: unexpected query type %T", other)
+	}
+	if i.value != j.value {
+		return fmt.Errorf("literal: value mismatched! %s >< %s", i.value, j.value)
+	}
+	return nil
 }
 
 func cmpIndex(q, other Query) error {

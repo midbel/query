@@ -72,6 +72,36 @@ func (a *all) clear() {
 	a.value = ""
 }
 
+type literal struct {
+	value string
+}
+
+func Value(str string) Query {
+	return &literal{
+		value: str,
+	}
+}
+
+func (i *literal) Next(string) (Query, error) {
+	return nil, errSkip
+}
+
+func (i *literal) String() string {
+	return i.value
+}
+
+func (i *literal) Get() []string {
+	return []string{i.value}
+}
+
+func (i *literal) update(string) error {
+	return fmt.Errorf("literal query can not be updated")
+}
+
+func (i *literal) clear() {
+
+}
+
 type ident struct {
 	ident  string
 	values []string

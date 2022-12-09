@@ -30,6 +30,9 @@ func debug(w io.Writer, q Query, level int, nonl bool) {
 		header = prefix
 	}
 	switch q := q.(type) {
+	case *literal:
+		fmt.Fprintf(w, "%sliteral(%s)", header, q.value)
+		fmt.Fprintln(w)
 	case *all:
 		fmt.Fprintf(w, "%sall", header)
 		fmt.Fprintln(w)

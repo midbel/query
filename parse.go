@@ -209,7 +209,16 @@ func (p *Parser) parseArray() (Query, error) {
 	p.next()
 	var arr array
 	for !p.done() && !p.is(Rsquare) {
-		next, err := p.parseQuery()
+		var (
+			next Query
+			err  error
+		)
+		if p.is(Literal) || p.is(Number) {
+			next = Value(p.curr.Literal)
+			p.next()
+		} else {
+			next, err = p.parseQuery()
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +247,11 @@ func (p *Parser) parseObject() (Query, error) {
 		fields: make(map[string]Query),
 	}
 	for !p.done() && !p.is(Rcurly) {
-		var ident string
+		var (
+			ident string
+			next  Query
+			err   error
+		)
 		switch p.curr.Type {
 		case Dot:
 			ident = p.peek.Literal
@@ -252,7 +265,12 @@ func (p *Parser) parseObject() (Query, error) {
 		default:
 			return nil, p.parseError("object: expected '.' or literal")
 		}
-		next, err := p.parseQuery()
+		if p.is(Literal) || p.is(Number) {
+			next = Value(p.curr.Literal)
+			p.next()
+		} else {
+			next, err = p.parseQuery()
+		}
 		if err != nil {
 			return nil, err
 		}
