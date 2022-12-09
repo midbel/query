@@ -85,9 +85,20 @@ func Pointer(level int) Query {
 	}
 }
 
-func (p *ptr) Next(key string) (Query, error) {
+func (p *ptr) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
+
+// func (p *ptr) next(call []Query, ident string) (Query, error) {
+// 	n := len(call)
+// 	if n == 0 || p.level > n {
+// 		return nil, errSkip
+// 	}
+// 	if p.level == 0 {
+// 		return slices.Fst(call).Next(ident)
+// 	}
+// 	return slices.At(call, n-p.level).Next(ident)
+// }
 
 func (p *ptr) String() string {
 	return ""
