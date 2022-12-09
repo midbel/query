@@ -16,15 +16,15 @@ func TestParse(t *testing.T) {
 		},
 		{
 			Input: `. | .foobar`,
-			Want:  nil,
+			Want:  Ident("foobar"),
 		},
 		{
 			Input: `.foo | . | .bar`,
-			Want:  nil,
+			Want:  PipeLine(Ident("foo"), Ident("bar")),
 		},
 		{
 			Input: `.foo | .bar | .`,
-			Want:  nil,
+			Want:  PipeLine(Ident("foo"), Ident("bar")),
 		},
 		{
 			Input: `.foo | .foo, .bar | .bar`,

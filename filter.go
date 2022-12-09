@@ -68,7 +68,7 @@ func prepare(r io.Reader) *reader {
 }
 
 func (r *reader) Read(q Query) error {
-	if q == keepAll {
+	if _, ok := q.(*all); ok {
 		r.wrap()
 		defer r.update(q)
 	}
@@ -202,10 +202,9 @@ func (r *reader) filter(q Query, key string) error {
 	if err != nil {
 		return r.traverse(next)
 	}
-	if next == nil && q != keepAll {
+	if !keepAll(q) && next == nil {
 		r.wrap()
 		defer r.update(q)
-		next = keepAll
 	}
 	return r.traverse(next)
 }

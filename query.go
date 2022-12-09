@@ -43,8 +43,6 @@ func (p *pipeline) update(str string) error {
 
 var errSkip = errors.New("skip")
 
-var keepAll Query = &all{}
-
 type all struct {
 	value string
 }
@@ -417,4 +415,9 @@ func writeArray(values []string) string {
 	}
 	str.WriteRune(']')
 	return str.String()
+}
+
+func keepAll(q Query) bool {
+	_, ok := q.(*all)
+	return ok
 }

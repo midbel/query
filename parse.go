@@ -13,6 +13,9 @@ type Parser struct {
 }
 
 func Parse(str string) (Query, error) {
+	if str == "." {
+		return All(), nil
+	}
 	p := Parser{
 		scan: Scan(str),
 	}
@@ -93,7 +96,7 @@ func (p *Parser) parseDot() (Query, error) {
 		p.next()
 		curr, err = p.parseQuery()
 	case Eof:
-		curr = keepAll
+		curr = All()
 	case Literal:
 		curr, err = p.parseIdent()
 	case Lsquare:
@@ -112,6 +115,9 @@ func (p *Parser) parseIdent() (Query, error) {
 	id.ident = p.curr.Literal
 	p.next()
 	if p.is(Dot) {
+		if p.peekIs(Eof) {
+			return nil, p.parseError("ident: unexpected end of input after dot")
+		}
 		id.next, err = p.parseQuery()
 	} else if p.is(Lsquare) {
 		id.next, err = p.parseIndex()
@@ -151,6 +157,9 @@ func (p *Parser) parseIndex() (Query, error) {
 	}
 	p.next()
 	if p.is(Dot) {
+		if p.peekIs(Eof) {
+			return nil, p.parseError("index: unexpected end of input after dot")
+		}
 		idx.next, err = p.parseQuery()
 	} else if p.is(Pipe) {
 		return p.parsePipe(&idx)
@@ -177,6 +186,9 @@ func (p *Parser) parsePipe(q Query) (Query, error) {
 		q, err := parse() // dot or array or object!!! TBW
 		if err != nil {
 			return nil, err
+		}
+		if keepAll(q) && p.is(Eof) {
+			continue
 		}
 		pip.queries = append(pip.queries, q)
 		switch p.curr.Type {
