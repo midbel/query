@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -13,6 +14,7 @@ type Parser struct {
 }
 
 func Parse(str string) (Query, error) {
+	str = strings.TrimSpace(str)
 	if str == "." {
 		return All(), nil
 	}
@@ -64,12 +66,19 @@ func (p *Parser) parseQuery() (Query, error) {
 	switch p.curr.Type {
 	default:
 		return nil, p.parseError("query: expected '.', '[' or '{'")
+	case Depth:
+		curr, err = p.parseDot()
+		if err == nil {
+			curr = Recurse(curr)
+		}
 	case Dot:
 		curr, err = p.parseDot()
 	case Lsquare:
 		curr, err = p.parseArray()
 	case Lcurly:
 		curr, err = p.parseObject()
+	case Link:
+		curr, err = p.parseLink()
 	}
 	if p.is(Pipe) && err == nil {
 		curr, err = p.parsePipe(curr)
@@ -83,6 +92,20 @@ func (p *Parser) parseQuery() (Query, error) {
 		return nil, p.parseError("query: expected ',', '|', '}', ']', ',' or end of input")
 	}
 	return curr, err
+}
+
+func (p *Parser) parseLink() (Query, error) {
+	p.next()
+	var k ptr
+	if p.is(Number) {
+		n, err := strconv.Atoi(p.curr.Literal)
+		if err != nil {
+			return nil, err
+		}
+		p.next()
+		k.level = n
+	}
+	return &k, nil
 }
 
 func (p *Parser) parseDot() (Query, error) {
@@ -114,10 +137,10 @@ func (p *Parser) parseIdent() (Query, error) {
 	)
 	id.ident = p.curr.Literal
 	p.next()
-	if p.is(Dot) {
-		if p.peekIs(Eof) {
-			return nil, p.parseError("ident: unexpected end of input after dot")
-		}
+	if (p.is(Dot) || p.is(Depth)) && p.peekIs(Eof) {
+		return nil, p.parseError("ident: unexpected end of input after dot")
+	}
+	if p.is(Dot) || p.is(Depth) {
 		id.next, err = p.parseQuery()
 	} else if p.is(Lsquare) {
 		id.next, err = p.parseIndex()
@@ -156,10 +179,10 @@ func (p *Parser) parseIndex() (Query, error) {
 		return nil, err
 	}
 	p.next()
-	if p.is(Dot) {
-		if p.peekIs(Eof) {
-			return nil, p.parseError("index: unexpected end of input after dot")
-		}
+	if (p.is(Dot) || p.is(Depth)) && p.peekIs(Eof) {
+		return nil, p.parseError("index: unexpected end of input after dot")
+	}
+	if p.is(Dot) || p.is(Depth) {
 		idx.next, err = p.parseQuery()
 	} else if p.is(Pipe) {
 		return p.parsePipe(&idx)
@@ -174,6 +197,14 @@ func (p *Parser) parsePipe(q Query) (Query, error) {
 			return p.parseArray()
 		case Lcurly:
 			return p.parseObject()
+		case Link:
+			return p.parseLink()
+		case Depth:
+			q, err := p.parseDot()
+			if err == nil {
+				q = Recurse(q)
+			}
+			return q, err
 		default:
 			return p.parseDot()
 		}
@@ -325,9 +356,9 @@ const (
 	Eof rune = -(1 + iota)
 	Literal
 	Number
-	Root
+	Link
 	Dot
-	Recurse
+	Depth
 	Comma
 	Lparen
 	Rparen
@@ -351,8 +382,8 @@ func (t Token) String() string {
 		return "<eof>"
 	case Dot:
 		return "<dot>"
-	case Recurse:
-		return "<recurse>"
+	case Depth:
+		return "<depth>"
 	case Comma:
 		return "<comma>"
 	case Lparen:
@@ -371,13 +402,13 @@ func (t Token) String() string {
 		return "<colon>"
 	case Pipe:
 		return "<pipe>"
-	case Root:
-		return "<root>"
 	case Invalid:
 		if t.Literal != "" {
 			return fmt.Sprintf("invalid(%s)", t.Literal)
 		}
 		return "<invalid>"
+	case Link:
+		return fmt.Sprintf("link(%s)", t.Literal)
 	case Literal:
 		return fmt.Sprintf("literal(%s)", t.Literal)
 	case Number:
@@ -463,7 +494,7 @@ func (s *Scanner) scanNumber(tok *Token) {
 func (s *Scanner) scanDelim(tok *Token) {
 	switch s.char {
 	case '$':
-		tok.Type = Root
+		tok.Type = Link
 	case '{':
 		tok.Type = Lcurly
 	case '}':
@@ -476,7 +507,7 @@ func (s *Scanner) scanDelim(tok *Token) {
 		tok.Type = Dot
 		if s.peek() == s.char {
 			s.read()
-			tok.Type = Recurse
+			tok.Type = Depth
 		}
 	case '(':
 		tok.Type = Lparen

@@ -33,6 +33,14 @@ func debug(w io.Writer, q Query, level int, nonl bool) {
 	case *literal:
 		fmt.Fprintf(w, "%sliteral(%s)", header, q.value)
 		fmt.Fprintln(w)
+	case *ptr:
+		fmt.Fprintf(w, "%sptr(%d)", header, q.level)
+		fmt.Fprintln(w)
+	case *recurse:
+		fmt.Fprintf(w, "%srecurse [", header)
+		debug(w, q.Query, level+1, false)
+		fmt.Fprintf(w, "%s]", prefix)
+		fmt.Fprintln(w)
 	case *all:
 		fmt.Fprintf(w, "%sall", header)
 		fmt.Fprintln(w)

@@ -39,6 +39,18 @@ func TestParse(t *testing.T) {
 			Want:  IdentNext("foo", Ident("bar")),
 		},
 		{
+			Input: `..foobar`,
+			Want:  Recurse(Ident("foobar")),
+		},
+		{
+			Input: `..foo.bar`,
+			Want:  Recurse(IdentNext("foo", Ident("bar"))),
+		},
+		{
+			Input: `.foo..bar`,
+			Want:  IdentNext("foo", Recurse(Ident("bar"))),
+		},
+		{
 			Input: `.[]`,
 			Want:  Index(nil),
 		},
@@ -134,6 +146,14 @@ func TestParse(t *testing.T) {
 			Input: `[.scores, 42, "foobar"]`,
 			Want:  Array(Ident("scores"), Value("42"), Value("foobar")),
 		},
+		{
+			Input: `.foobar | $`,
+			Want:  PipeLine(Ident("foobar"), Pointer(0)),
+		},
+		{
+			Input: `.foobar | $5`,
+			Want:  PipeLine(Ident("foobar"), Pointer(5)),
+		},
 	}
 	for _, d := range data {
 		got, err := Parse(d.Input)
@@ -165,9 +185,40 @@ func cmpQuery(q, other Query) error {
 		return cmpObject(q, other)
 	case *literal:
 		return cmpLiteral(q, other)
+	case *recurse:
+		return cmpRecurse(q, other)
+	case *ptr:
+		return cmpPtr(q, other)
 	default:
 		return fmt.Errorf("unsupported query type %T", q)
 	}
+}
+
+func cmpRecurse(q, other Query) error {
+	i, ok := q.(*recurse)
+	if !ok {
+		return fmt.Errorf("recurse: unexpected query type %T", q)
+	}
+	j, ok := other.(*recurse)
+	if !ok {
+		return fmt.Errorf("recurse: unexpected query type %T", other)
+	}
+	return cmpQuery(i.Query, j.Query)
+}
+
+func cmpPtr(q, other Query) error {
+	i, ok := q.(*ptr)
+	if !ok {
+		return fmt.Errorf("ptr: unexpected query type %T", q)
+	}
+	j, ok := other.(*ptr)
+	if !ok {
+		return fmt.Errorf("ptr: unexpected query type %T", other)
+	}
+	if i.level != j.level {
+		return fmt.Errorf("ptr: level mismatched! %d >< %d", i.level, j.level)
+	}
+	return nil
 }
 
 func cmpArray(q, other Query) error {

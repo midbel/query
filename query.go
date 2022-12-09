@@ -33,6 +33,7 @@ func (p *pipeline) update(str string) error {
 	for _, q := range p.queries {
 		r := strings.NewReader(str)
 		q.clear()
+
 		if err := execute(r, q); err != nil {
 			return err
 		}
@@ -48,7 +49,8 @@ type all struct {
 }
 
 func All() Query {
-	return &all{}
+	var q all
+	return &q
 }
 
 func (a *all) Next(string) (Query, error) {
@@ -70,6 +72,56 @@ func (a *all) update(str string) error {
 
 func (a *all) clear() {
 	a.value = ""
+}
+
+type ptr struct {
+	level  int
+	values []string
+}
+
+func Pointer(level int) Query {
+	return &ptr{
+		level: level,
+	}
+}
+
+func (p *ptr) Next(key string) (Query, error) {
+	return nil, errSkip
+}
+
+func (p *ptr) String() string {
+	return ""
+}
+
+func (p *ptr) Get() []string {
+	return p.values
+}
+
+func (p *ptr) update(str string) error {
+	p.values = append(p.values, str)
+	return nil
+}
+
+func (p *ptr) clear() {
+	p.values = p.values[:0]
+}
+
+type recurse struct {
+	Query
+}
+
+func Recurse(q Query) Query {
+	return &recurse{
+		Query: q,
+	}
+}
+
+func (r *recurse) Next(ident string) (Query, error) {
+	n, err := r.Query.Next(ident)
+	if err != nil {
+		return r, nil
+	}
+	return n, err
 }
 
 type literal struct {
