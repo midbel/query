@@ -183,7 +183,7 @@ func (p *Parser) parsePipe(q Query) (Query, error) {
 		Query: q,
 	}
 	for !p.done() && !p.is(Rcurly) && !p.is(Rsquare) && !p.is(Comma) {
-		q, err := parse() // dot or array or object!!! TBW
+		q, err := parse()
 		if err != nil {
 			return nil, err
 		}

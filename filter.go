@@ -68,7 +68,7 @@ func prepare(r io.Reader) *reader {
 }
 
 func (r *reader) Read(q Query) error {
-	if _, ok := q.(*all); ok {
+	if keepAll(q) {
 		r.wrap()
 		defer r.update(q)
 	}
