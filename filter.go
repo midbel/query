@@ -26,7 +26,7 @@ func Filter(r io.Reader, query string) ([]string, error) {
 	if err := execute(r, q); err != nil {
 		return nil, err
 	}
-	return q.get(), nil
+	return q.Get(), nil
 }
 
 func Execute(r io.Reader, query string) (string, error) {
@@ -37,7 +37,7 @@ func Execute(r io.Reader, query string) (string, error) {
 	if err := execute(r, q); err != nil {
 		return "", err
 	}
-	return q.Get(), nil
+	return q.String(), nil
 }
 
 func execute(r io.Reader, q Query) error {
@@ -210,11 +210,9 @@ func (r *reader) filter(q Query, key string) error {
 	return r.traverse(next)
 }
 
-func (r *reader) update(q Query) {
+func (r *reader) update(q Query) error {
 	str := r.unwrap()
-	if s, ok := q.(setter); ok {
-		s.set(str)
-	}
+	return q.update(str)
 }
 
 func (r *reader) literal() (string, error) {

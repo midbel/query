@@ -2,20 +2,19 @@ package query
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/midbel/slices"
 )
 
 type Query interface {
-	Next(string) (Query, error)
-	Get() string
-	get() []string
-	clear()
-}
+	fmt.Stringer
 
-type setter interface {
-	set(string)
+	Next(string) (Query, error)
+	Get() []string
+	update(string) error
+	clear()
 }
 
 type pipeline struct {
@@ -30,18 +29,16 @@ func PipeLine(q Query, next ...Query) Query {
 	}
 }
 
-func (p *pipeline) set(str string) {
+func (p *pipeline) update(str string) error {
 	for _, q := range p.queries {
 		r := strings.NewReader(str)
 		q.clear()
 		if err := execute(r, q); err != nil {
-			return
+			return err
 		}
-		str = q.Get()
+		str = q.String()
 	}
-	if s, ok := p.Query.(setter); ok {
-		s.set(str)
-	}
+	return p.Query.update(str)
 }
 
 var errSkip = errors.New("skip")
@@ -60,16 +57,17 @@ func (a *all) Next(string) (Query, error) {
 	return nil, nil
 }
 
-func (a *all) Get() string {
+func (a *all) String() string {
 	return a.value
 }
 
-func (a *all) get() []string {
+func (a *all) Get() []string {
 	return []string{a.value}
 }
 
-func (a *all) set(str string) {
+func (a *all) update(str string) error {
 	a.value = str
+	return nil
 }
 
 func (a *all) clear() {
@@ -100,9 +98,9 @@ func (i *ident) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
 
-func (i *ident) Get() string {
+func (i *ident) String() string {
 	if i.next != nil {
-		return i.next.Get()
+		return i.next.String()
 	}
 	if len(i.values) == 1 {
 		return slices.Fst(i.values)
@@ -110,15 +108,16 @@ func (i *ident) Get() string {
 	return writeArray(i.values)
 }
 
-func (i *ident) set(str string) {
-	i.values = append(i.values, str)
-}
-
-func (i *ident) get() []string {
+func (i *ident) Get() []string {
 	if i.next == nil {
 		return i.values
 	}
-	return i.next.get()
+	return i.next.Get()
+}
+
+func (i *ident) update(str string) error {
+	i.values = append(i.values, str)
+	return nil
 }
 
 func (i *ident) clear() {
@@ -157,9 +156,9 @@ func (i *index) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
 
-func (i *index) Get() string {
+func (i *index) String() string {
 	if i.next != nil {
-		return i.next.Get()
+		return i.next.String()
 	}
 	if len(i.values) == 1 {
 		return slices.Fst(i.values)
@@ -167,15 +166,16 @@ func (i *index) Get() string {
 	return writeArray(i.values)
 }
 
-func (i *index) get() []string {
+func (i *index) Get() []string {
 	if i.next == nil {
 		return i.values
 	}
-	return i.next.get()
+	return i.next.Get()
 }
 
-func (i *index) set(str string) {
+func (i *index) update(str string) error {
 	i.values = append(i.values, str)
+	return nil
 }
 
 func (i *index) clear() {
@@ -206,34 +206,39 @@ func (a *any) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
 
-func (a *any) Get() string {
+func (a *any) String() string {
 	var values []string
 	for i := range a.list {
-		values = append(values, a.list[i].Get())
+		values = append(values, a.list[i].String())
 	}
 	return writeArray(values)
 }
 
-func (a *any) set(str string) {
-	if s, ok := a.last.(setter); ok {
-		s.set(str)
-		a.last = nil
-	}
-}
-
-func (a *any) get() []string {
+func (a *any) Get() []string {
 	var values []string
 	for i := range a.list {
-		arr := writeArray(a.list[i].get())
+		arr := writeArray(a.list[i].Get())
 		values = append(values, arr)
 	}
 	return values
+}
+
+func (a *any) update(str string) error {
+	if a.last == nil {
+		return fmt.Errorf("no query selected")
+	}
+	defer a.reset()
+	return a.last.update(str)
 }
 
 func (a *any) clear() {
 	for i := range a.list {
 		a.list[i].clear()
 	}
+	a.reset()
+}
+
+func (a *any) reset() {
 	a.last = nil
 }
 
@@ -259,34 +264,39 @@ func (a *array) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
 
-func (a *array) Get() string {
+func (a *array) String() string {
 	var values []string
 	for i := range a.list {
-		values = append(values, a.list[i].get()...)
+		values = append(values, a.list[i].Get()...)
 	}
 	return writeArray(values)
 }
 
-func (a *array) get() []string {
+func (a *array) Get() []string {
 	var values []string
 	for i := range a.list {
-		arr := writeArray(a.list[i].get())
+		arr := writeArray(a.list[i].Get())
 		values = append(values, arr)
 	}
 	return values
 }
 
-func (a *array) set(str string) {
-	if s, ok := a.last.(setter); ok {
-		s.set(str)
-		a.last = nil
+func (a *array) update(str string) error {
+	if a.last == nil {
+		return fmt.Errorf("no query selected")
 	}
+	defer a.reset()
+	return a.last.update(str)
 }
 
 func (a *array) clear() {
 	for i := range a.list {
 		a.list[i].clear()
 	}
+	a.reset()
+}
+
+func (a *array) reset() {
 	a.last = nil
 }
 
@@ -318,27 +328,20 @@ func (o *object) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
 
-func (o *object) Get() string {
+func (o *object) String() string {
 	var values [][]string
 	for _, k := range o.keys {
 		q := o.fields[k]
-		values = append(values, q.get())
+		values = append(values, q.Get())
 	}
 	return writeObject(o.keys, slices.Combine(values...))
 }
 
-func (o *object) set(str string) {
-	k := slices.Lst(o.keys)
-	if s, ok := o.fields[k].(setter); ok {
-		s.set(str)
-	}
-}
-
-func (o *object) get() []string {
+func (o *object) Get() []string {
 	var values [][]string
 	for _, k := range o.keys {
 		q := o.fields[k]
-		values = append(values, q.get())
+		values = append(values, q.Get())
 	}
 	var list []string
 	for _, vs := range slices.Combine(values...) {
@@ -346,6 +349,18 @@ func (o *object) get() []string {
 		list = append(list, str)
 	}
 	return list
+}
+
+func (o *object) update(str string) error {
+	if len(o.keys) == 0 {
+		return fmt.Errorf("no query selected")
+	}
+	k := slices.Lst(o.keys)
+	q, ok := o.fields[k]
+	if !ok {
+		return fmt.Errorf("no query selected for key %s", k)
+	}
+	return q.update(str)
 }
 
 func (o *object) clear() {
