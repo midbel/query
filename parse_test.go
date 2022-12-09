@@ -51,6 +51,10 @@ func TestParse(t *testing.T) {
 			Want:  IdentNext("foo", Recurse(Ident("bar"))),
 		},
 		{
+			Input: `.foo | .foo..bar`,
+			Want:  PipeLine(Ident("foo"), IdentNext("foo", Recurse(Ident("bar")))),
+		},
+		{
 			Input: `.[]`,
 			Want:  Index(nil),
 		},

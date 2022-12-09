@@ -200,11 +200,7 @@ func (p *Parser) parsePipe(q Query) (Query, error) {
 		case Link:
 			return p.parseLink()
 		case Depth:
-			q, err := p.parseDot()
-			if err == nil {
-				q = Recurse(q)
-			}
-			return q, err
+			return p.parseQuery()
 		default:
 			return p.parseDot()
 		}
