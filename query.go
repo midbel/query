@@ -357,23 +357,43 @@ func (o *object) Next(ident string) (Query, error) {
 }
 
 func (o *object) String() string {
-	var values [][]string
+	var (
+		values [][]string
+		keys   []string
+	)
 	for _, k := range o.keys {
 		q := o.fields[k]
 		values = append(values, q.Get())
+		keys = append(keys, k)
 	}
-	return writeObject(o.keys, slices.Combine(values...))
+	for k, q := range o.fields {
+		if _, ok := q.(*literal); ok {
+			keys = append(keys, k)
+			values = append(values, q.Get())
+		}
+	}
+	return writeObject(keys, slices.Combine(values...))
 }
 
 func (o *object) Get() []string {
-	var values [][]string
+	var (
+		values [][]string
+		keys   []string
+	)
 	for _, k := range o.keys {
 		q := o.fields[k]
 		values = append(values, q.Get())
+		keys = append(keys, k)
+	}
+	for k, q := range o.fields {
+		if _, ok := q.(*literal); ok {
+			keys = append(keys, k)
+			values = append(values, q.Get())
+		}
 	}
 	var list []string
 	for _, vs := range slices.Combine(values...) {
-		str := writeObject(o.keys, [][]string{vs})
+		str := writeObject(keys, [][]string{vs})
 		list = append(list, str)
 	}
 	return list

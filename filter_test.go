@@ -62,6 +62,11 @@ func TestFilter(t *testing.T) {
 			Want:  `[{"user": "foo", "age": 42}, {"user": "bar", "age": 42}]`,
 		},
 		{
+			Input: `["foo", "bar"]`,
+			Query: `[42, .[]]`,
+			Want:  `[42, "foo", "bar"]`,
+		},
+		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
 			Query: `.[0,1]`,
 			Want:  `[{"user": "foo"}, {"user": "bar"}]`,
