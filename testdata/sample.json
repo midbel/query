@@ -1,0 +1,38 @@
+{
+	"user": "midbel",
+	"mail": "noreply@midbel.org",
+	"age": 0,
+	"position": {
+		"title": "backend developper",
+		"since": "2010-09-01"
+	},
+	"projects": [
+		{
+			"name": "slices",
+			"priority": 10,
+			"maintainers": null,
+			"repo": "github.com/midbel/slices",
+			"version": "v0.5.2",
+			"ready": true,
+			"tested": false
+		},
+		{
+			"name": "charts",
+			"priority": 100,
+			"maintainers": null,
+			"repo": "github.com/midbel/charts",
+			"version": "dev",
+			"ready": false,
+			"tested": false
+		},
+		{
+			"name": "query",
+			"priority": 60,
+			"maintainers": null,
+			"repo": "github.com/midbel/query",
+			"version": "dev",
+			"ready": false,
+			"tested": true
+		}
+	]
+}

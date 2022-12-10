@@ -3,22 +3,25 @@ package query
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode/utf8"
-)
 
-type Query interface {
-	Next(string) (Query, error)
-}
+	"github.com/midbel/slices"
+)
 
 type Parser struct {
 	scan *Scanner
 	curr Token
 	peek Token
+
+	depth  int
+	parsed []Query
 }
 
 func Parse(str string) (Query, error) {
+	str = strings.TrimSpace(str)
 	if str == "." {
-		return KeepAll, nil
+		return All(), nil
 	}
 	p := Parser{
 		scan: Scan(str),
@@ -35,23 +38,24 @@ func (p *Parser) Parse() (Query, error) {
 func (p *Parser) parse() (Query, error) {
 	var list []Query
 	for !p.done() {
-		curr, err := p.parseFilter()
+		q, err := p.parseQuery()
 		if err != nil {
 			return nil, err
 		}
-		list = append(list, curr)
+		list = append(list, q)
 		switch p.curr.Type {
 		case Comma:
 			p.next()
 			if p.is(Eof) {
-				return nil, fmt.Errorf("parser: expected query after ','")
+				return nil, p.parseError("parser: expected query after ','")
 			}
 		case Eof:
 		default:
-			return nil, fmt.Errorf("parser: expected ',' or eof")
+			return nil, p.parseError("parser: expected ',' or end of input")
 		}
+		p.reset()
 	}
-	if len(list) == 0 {
+	if len(list) == 1 {
 		return list[0], nil
 	}
 	a := any{
@@ -60,99 +64,316 @@ func (p *Parser) parse() (Query, error) {
 	return &a, nil
 }
 
-func (p *Parser) parseFilter() (Query, error) {
+func (p *Parser) parseQuery() (Query, error) {
 	var (
 		curr Query
 		err  error
 	)
-	if err := p.expect(Dot, "parser: expected '.'"); err != nil {
-		return nil, err
-	}
-	p.next()
 	switch p.curr.Type {
-	case Literal:
-		curr, err = p.parseIdent()
+	default:
+		return nil, p.parseError("query: expected '.', '[' or '{'")
+	case Depth:
+		curr, err = p.parseDot()
+		if err == nil {
+			curr = Recurse(curr)
+		}
+	case Dot:
+		curr, err = p.parseDot()
 	case Lsquare:
 		curr, err = p.parseArray()
-	default:
-		return nil, fmt.Errorf("expected '.' or '('")
+	case Lcurly:
+		curr, err = p.parseObject()
+	case Link:
+		curr, err = p.parseLink()
+	}
+	if p.is(Pipe) && err == nil {
+		curr, err = p.parsePipe(curr)
 	}
 	if err != nil {
 		return nil, err
 	}
 	switch p.curr.Type {
-	case Eof, Comma:
+	case Eof, Comma, Pipe, Rsquare, Rcurly:
 	default:
-		return nil, fmt.Errorf("expected ',' or end of input")
+		return nil, p.parseError("query: expected ',', '|', '}', ']', ',' or end of input")
+	}
+	return curr, err
+}
+
+func (p *Parser) parseLink() (Query, error) {
+	p.next()
+	var k ptr
+	if p.is(Number) {
+		p.next()
+	}
+	if len(p.parsed) == 0 {
+		return nil, p.parseError("no query parsed")
+	}
+	k.Query = slices.Fst(p.parsed)
+	return &k, nil
+}
+
+func (p *Parser) parseDot() (Query, error) {
+	p.next()
+	var (
+		curr Query
+		err  error
+	)
+	switch p.curr.Type {
+	case Pipe:
+		p.next()
+		curr, err = p.parseQuery()
+	case Eof:
+		curr = All()
+	case Literal:
+		curr, err = p.parseIdent()
+	case Lsquare:
+		curr, err = p.parseIndex()
+	default:
+		return nil, p.parseError("dot: expected '.', '|' or '['")
 	}
 	return curr, err
 }
 
 func (p *Parser) parseIdent() (Query, error) {
+	p.enter()
+	defer p.leave()
+
 	var (
 		id  ident
 		err error
 	)
 	id.ident = p.curr.Literal
 	p.next()
-	switch p.curr.Type {
-	case Dot:
-		id.next, err = p.parseFilter()
-	case Lsquare:
-		id.next, err = p.parseArray()
-	case Comma, Eof:
-	default:
-		err = fmt.Errorf("identifier: unexpected character %s", p.curr)
+	p.push(&id)
+
+	if (p.is(Dot) || p.is(Depth)) && p.peekIs(Eof) {
+		return nil, p.parseError("ident: unexpected end of input after dot")
+	}
+	if p.is(Dot) || p.is(Depth) {
+		id.next, err = p.parseQuery()
+	} else if p.is(Lsquare) {
+		id.next, err = p.parseIndex()
 	}
 	return &id, err
 }
 
-func (p *Parser) parseArray() (Query, error) {
+func (p *Parser) parseIndex() (Query, error) {
+	p.enter()
+	defer p.leave()
+
 	p.next()
 	var (
-		arr array
+		idx index
 		err error
 	)
 	for !p.done() && !p.is(Rsquare) {
-		if err := p.expect(Number, "array: number expected"); err != nil {
+		if err := p.expect(Number, "index: number expected"); err != nil {
 			return nil, err
 		}
 
 		if _, err := strconv.Atoi(p.curr.Literal); err != nil {
 			return nil, err
 		}
-		arr.index = append(arr.index, p.curr.Literal)
+		idx.list = append(idx.list, p.curr.Literal)
 		p.next()
 		switch p.curr.Type {
 		case Comma:
 			p.next()
 			if p.is(Rsquare) {
-				return nil, fmt.Errorf("array: expected number after ','")
+				return nil, p.parseError("index: expected number after ','")
 			}
 		case Rsquare:
 		default:
-			return nil, fmt.Errorf("array: expected ',' or ']")
+			return nil, p.parseError("index: expected ',' or ']")
 		}
 	}
-	if err := p.expect(Rsquare, "array: expected ']"); err != nil {
+	if err := p.expect(Rsquare, "index: expected ']"); err != nil {
 		return nil, err
 	}
 	p.next()
-	switch p.curr.Type {
-	case Dot:
-		arr.next, err = p.parseFilter()
-	case Comma, Eof:
-	default:
-		err = fmt.Errorf("array: unexpected character %s", p.curr)
+	p.push(&idx)
+
+	if (p.is(Dot) || p.is(Depth)) && p.peekIs(Eof) {
+		return nil, p.parseError("index: unexpected end of input after dot")
 	}
-	return &arr, err
+	if p.is(Dot) || p.is(Depth) {
+		idx.next, err = p.parseQuery()
+	} else if p.is(Pipe) {
+		return p.parsePipe(&idx)
+	}
+	return &idx, err
+}
+
+func (p *Parser) parsePipe(q Query) (Query, error) {
+	parse := func() (Query, error) {
+		switch p.curr.Type {
+		case Lsquare:
+			return p.parseArray()
+		case Lcurly:
+			return p.parseObject()
+		case Link:
+			return p.parseLink()
+		case Depth:
+			return p.parseQuery()
+		default:
+			return p.parseDot()
+		}
+	}
+	p.next()
+	pip := pipeline{
+		Query: q,
+	}
+	for !p.done() && !p.is(Rcurly) && !p.is(Rsquare) && !p.is(Comma) {
+		q, err := parse()
+		if err != nil {
+			return nil, err
+		}
+		if keepAll(q) && p.is(Eof) {
+			continue
+		}
+		pip.queries = append(pip.queries, q)
+		switch p.curr.Type {
+		case Pipe:
+			p.next()
+			if p.is(Eof) || p.is(Rcurly) || p.is(Rsquare) || p.is(Comma) {
+				return nil, p.parseError("pipeline: expected query after '|")
+			}
+		case Eof, Comma, Rcurly, Rsquare:
+		default:
+			return nil, p.parseError("pipeline: expected '|', '}', ']' or ','")
+		}
+	}
+	return &pip, nil
+}
+
+func (p *Parser) parseArray() (Query, error) {
+	p.enter()
+	defer p.leave()
+
+	p.next()
+	var arr array
+	for !p.done() && !p.is(Rsquare) {
+		var (
+			next Query
+			err  error
+		)
+		if p.is(Literal) || p.is(Number) {
+			next = Value(p.curr.Literal)
+			p.next()
+		} else {
+			next, err = p.parseQuery()
+		}
+		if err != nil {
+			return nil, err
+		}
+		arr.list = append(arr.list, next)
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rsquare) {
+				return nil, p.parseError("array: expected query after comma")
+			}
+		case Rsquare:
+		default:
+			return nil, p.parseError("array: expected ',' or '}'")
+		}
+	}
+	if err := p.expect(Rsquare, "array: expected ']' at end"); err != nil {
+		return nil, err
+	}
+	p.next()
+	p.push(&arr)
+
+	return &arr, nil
+}
+
+func (p *Parser) parseObject() (Query, error) {
+	p.enter()
+	defer p.leave()
+
+	p.next()
+	obj := object{
+		fields: make(map[string]Query),
+	}
+	for !p.done() && !p.is(Rcurly) {
+		var (
+			ident string
+			next  Query
+			err   error
+		)
+		switch p.curr.Type {
+		case Dot:
+			ident = p.peek.Literal
+		case Literal:
+			ident = p.curr.Literal
+			p.next()
+			if err := p.expect(Colon, "object: expect ':' after literal"); err != nil {
+				return nil, err
+			}
+			p.next()
+		default:
+			return nil, p.parseError("object: expected '.' or literal")
+		}
+		if p.is(Literal) || p.is(Number) {
+			next = Value(p.curr.Literal)
+			p.next()
+		} else {
+			next, err = p.parseQuery()
+		}
+		if err != nil {
+			return nil, err
+		}
+		obj.fields[ident] = next
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rcurly) {
+				return nil, p.parseError("object: expected query after comma")
+			}
+		case Rcurly:
+		default:
+			return nil, p.parseError("object: expected ',' or '}'")
+		}
+	}
+	if err := p.expect(Rcurly, "object: expected '}' at end"); err != nil {
+		return nil, err
+	}
+	p.next()
+	p.push(&obj)
+
+	return &obj, nil
+}
+
+func (p *Parser) enter() {
+	p.depth++
+}
+
+func (p *Parser) leave() {
+	p.depth--
+}
+
+func (p *Parser) push(q Query) {
+	if p.depth > 1 {
+		return
+	}
+	p.parsed = append(p.parsed, q)
+}
+
+func (p *Parser) reset() {
+	p.depth = 0
+	p.parsed = p.parsed[:0]
 }
 
 func (p *Parser) expect(kind rune, msg string) error {
 	if p.curr.Type != kind {
-		return fmt.Errorf(msg)
+		return p.parseError(msg)
 	}
 	return nil
+}
+
+func (p *Parser) peekIs(kind rune) bool {
+	return p.peek.Type == kind
 }
 
 func (p *Parser) is(kind rune) bool {
@@ -160,7 +381,7 @@ func (p *Parser) is(kind rune) bool {
 }
 
 func (p *Parser) done() bool {
-	return p.curr.Type == Eof
+	return p.is(Eof)
 }
 
 func (p *Parser) next() {
@@ -168,16 +389,26 @@ func (p *Parser) next() {
 	p.peek = p.scan.Scan()
 }
 
+func (p *Parser) parseError(msg string, args ...interface{}) error {
+	return fmt.Errorf(msg, args...)
+}
+
 const (
 	Eof rune = -(1 + iota)
 	Literal
 	Number
+	Link
 	Dot
+	Depth
 	Comma
 	Lparen
 	Rparen
 	Lsquare
 	Rsquare
+	Lcurly
+	Rcurly
+	Colon
+	Pipe
 	Invalid
 )
 
@@ -192,6 +423,8 @@ func (t Token) String() string {
 		return "<eof>"
 	case Dot:
 		return "<dot>"
+	case Depth:
+		return "<depth>"
 	case Comma:
 		return "<comma>"
 	case Lparen:
@@ -202,11 +435,21 @@ func (t Token) String() string {
 		return "<lsquare>"
 	case Rsquare:
 		return "<rsquare>"
+	case Lcurly:
+		return "<lcurly>"
+	case Rcurly:
+		return "<rcurly>"
+	case Colon:
+		return "<colon>"
+	case Pipe:
+		return "<pipe>"
 	case Invalid:
 		if t.Literal != "" {
 			return fmt.Sprintf("invalid(%s)", t.Literal)
 		}
 		return "<invalid>"
+	case Link:
+		return fmt.Sprintf("link(%s)", t.Literal)
 	case Literal:
 		return fmt.Sprintf("literal(%s)", t.Literal)
 	case Number:
@@ -291,10 +534,22 @@ func (s *Scanner) scanNumber(tok *Token) {
 
 func (s *Scanner) scanDelim(tok *Token) {
 	switch s.char {
+	case '$':
+		tok.Type = Link
+	case '{':
+		tok.Type = Lcurly
+	case '}':
+		tok.Type = Rcurly
+	case ':':
+		tok.Type = Colon
 	case ',':
 		tok.Type = Comma
 	case '.':
 		tok.Type = Dot
+		if s.peek() == s.char {
+			s.read()
+			tok.Type = Depth
+		}
 	case '(':
 		tok.Type = Lparen
 	case ')':
@@ -303,6 +558,8 @@ func (s *Scanner) scanDelim(tok *Token) {
 		tok.Type = Lsquare
 	case ']':
 		tok.Type = Rsquare
+	case '|':
+		tok.Type = Pipe
 	default:
 		tok.Type = Invalid
 	}
@@ -370,14 +627,14 @@ func isQuote(r rune) bool {
 	return r == '\'' || r == '"'
 }
 
-func isArray(r rune) bool {
-	return r == '['
+func isGroup(r rune) bool {
+	return r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}'
 }
 
-func isGroup(r rune) bool {
-	return r == '('
+func isPunct(r rune) bool {
+	return r == '.' || r == ',' || r == ':' || r == '|' || r == '$'
 }
 
 func isDelim(r rune) bool {
-	return r == ']' || r == ')' || r == ',' || r == '.' || isGroup(r) || isArray(r)
+	return isGroup(r) || isPunct(r)
 }
