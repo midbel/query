@@ -15,6 +15,7 @@ type Query interface {
 	Get() []string
 	update(string) error
 	clear()
+	Clone() Query
 }
 
 type pipeline struct {
@@ -40,6 +41,15 @@ func (p *pipeline) update(str string) error {
 		str = q.String()
 	}
 	return p.Query.update(str)
+}
+
+func (p *pipeline) Clone() Query {
+	var q pipeline
+	q.Query = p.Query.Clone()
+	for i := range p.queries {
+		q.queries = append(q.queries, p.queries[i].Clone())
+	}
+	return &q
 }
 
 var errSkip = errors.New("skip")
@@ -74,6 +84,11 @@ func (a *all) clear() {
 	a.value = ""
 }
 
+func (a *all) Clone() Query {
+	var q all
+	return &q
+}
+
 type ptr struct {
 	level  int
 	values []string
@@ -88,17 +103,6 @@ func Pointer(level int) Query {
 func (p *ptr) Next(ident string) (Query, error) {
 	return nil, errSkip
 }
-
-// func (p *ptr) next(call []Query, ident string) (Query, error) {
-// 	n := len(call)
-// 	if n == 0 || p.level > n {
-// 		return nil, errSkip
-// 	}
-// 	if p.level == 0 {
-// 		return slices.Fst(call).Next(ident)
-// 	}
-// 	return slices.At(call, n-p.level).Next(ident)
-// }
 
 func (p *ptr) String() string {
 	return ""
@@ -117,6 +121,10 @@ func (p *ptr) clear() {
 	p.values = p.values[:0]
 }
 
+func (p *ptr) Clone() Query {
+	return p
+}
+
 type recurse struct {
 	Query
 }
@@ -133,6 +141,12 @@ func (r *recurse) Next(ident string) (Query, error) {
 		return r, nil
 	}
 	return n, err
+}
+
+func (r *recurse) Clone() Query {
+	var q recurse
+	q.Query = r.Query.Clone()
+	return &q
 }
 
 type literal struct {
@@ -163,6 +177,11 @@ func (i *literal) update(string) error {
 
 func (i *literal) clear() {
 
+}
+
+func (i *literal) Clone() Query {
+	q := *i
+	return &q
 }
 
 type ident struct {
@@ -216,6 +235,15 @@ func (i *ident) clear() {
 	if i.next != nil {
 		i.next.clear()
 	}
+}
+
+func (i *ident) Clone() Query {
+	var q ident
+	q.ident = i.ident
+	if i.next != nil {
+		q.next = i.next.Clone()
+	}
+	return &q
 }
 
 type index struct {
@@ -276,6 +304,16 @@ func (i *index) clear() {
 	}
 }
 
+func (i *index) Clone() Query {
+	var q index
+	q.list = make([]string, len(i.list))
+	copy(q.list, i.list)
+	if i.next != nil {
+		q.next = i.next.Clone()
+	}
+	return &q
+}
+
 type any struct {
 	list []Query
 	last Query
@@ -333,6 +371,14 @@ func (a *any) reset() {
 	a.last = nil
 }
 
+func (a *any) Clone() Query {
+	var q any
+	for i := range a.list {
+		q.list = append(q.list, a.list[i].Clone())
+	}
+	return &q
+}
+
 type array struct {
 	list []Query
 	last Query
@@ -385,6 +431,14 @@ func (a *array) clear() {
 		a.list[i].clear()
 	}
 	a.reset()
+}
+
+func (a *array) Clone() Query {
+	var q array
+	for i := range a.list {
+		q.list = append(q.list, a.list[i].Clone())
+	}
+	return &q
 }
 
 func (a *array) reset() {
@@ -479,6 +533,15 @@ func (o *object) clear() {
 		q.clear()
 	}
 	o.keys = o.keys[:0]
+}
+
+func (o *object) Clone() Query {
+	var q object
+	q.fields = make(map[string]Query)
+	for k := range o.fields {
+		q.fields[k] = o.fields[k].Clone()
+	}
+	return &q
 }
 
 func writeObject(keys []string, values [][]string) string {
