@@ -70,7 +70,7 @@ func prepare(r io.Reader) *reader {
 func (r *reader) Read(q Query) error {
 	if keepAll(q) {
 		r.wrap()
-		defer r.update(q)
+		defer r.update(q, "")
 	}
 	err := r.traverse(q)
 	if err != nil {
@@ -204,12 +204,12 @@ func (r *reader) filter(q Query, key string) error {
 	}
 	if !keepAll(q) && next == nil {
 		r.wrap()
-		defer r.update(q)
+		defer r.update(q, key)
 	}
 	return r.traverse(next)
 }
 
-func (r *reader) update(q Query) error {
+func (r *reader) update(q Query, key string) error {
 	str := r.unwrap()
 	return q.update(str)
 }

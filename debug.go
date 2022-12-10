@@ -34,7 +34,7 @@ func debug(w io.Writer, q Query, level int, nonl bool) {
 		fmt.Fprintf(w, "%sliteral(%s)", header, q.value)
 		fmt.Fprintln(w)
 	case *ptr:
-		fmt.Fprintf(w, "%sptr(%d)", header, q.level)
+		fmt.Fprintf(w, "%sptr", header)
 		fmt.Fprintln(w)
 	case *recurse:
 		fmt.Fprintf(w, "%srecurse [", header)

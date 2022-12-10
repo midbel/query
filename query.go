@@ -90,35 +90,20 @@ func (a *all) Clone() Query {
 }
 
 type ptr struct {
-	level  int
-	values []string
+	Query
 }
 
-func Pointer(level int) Query {
+func Pointer(q Query) Query {
 	return &ptr{
-		level: level,
+		Query: q,
 	}
 }
 
-func (p *ptr) Next(ident string) (Query, error) {
-	return nil, errSkip
-}
-
-func (p *ptr) String() string {
-	return ""
-}
-
-func (p *ptr) Get() []string {
-	return p.values
-}
-
-func (p *ptr) update(str string) error {
-	p.values = append(p.values, str)
-	return nil
-}
-
-func (p *ptr) clear() {
-	p.values = p.values[:0]
+func cloneQuery(q Query) Query {
+	if p, ok := q.(*ptr); ok {
+		return p.Query.Clone()
+	}
+	return q
 }
 
 func (p *ptr) Clone() Query {
@@ -391,10 +376,11 @@ func Array(list ...Query) Query {
 }
 
 func (a *array) Next(ident string) (Query, error) {
-	for _, q := range a.list {
-		n, err := q.Next(ident)
+	for i := range a.list {
+		a.list[i] = cloneQuery(a.list[i])
+		n, err := a.list[i].Next(ident)
 		if err == nil {
-			a.last = q
+			a.last = a.list[i]
 			return n, nil
 		}
 	}
@@ -463,8 +449,9 @@ func Object(ks []string, qs []Query) Query {
 }
 
 func (o *object) Next(ident string) (Query, error) {
-	for k, q := range o.fields {
-		n, err := q.Next(ident)
+	for k := range o.fields {
+		o.fields[k] = cloneQuery(o.fields[k])
+		n, err := o.fields[k].Next(ident)
 		if err == nil {
 			o.keys = append(o.keys, k)
 			return n, err

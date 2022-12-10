@@ -152,11 +152,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			Input: `.foobar | $`,
-			Want:  PipeLine(Ident("foobar"), Pointer(0)),
-		},
-		{
-			Input: `.foobar | $5`,
-			Want:  PipeLine(Ident("foobar"), Pointer(5)),
+			Want:  PipeLine(Ident("foobar"), Pointer(Ident("foobar"))),
 		},
 	}
 	for _, d := range data {
@@ -219,10 +215,7 @@ func cmpPtr(q, other Query) error {
 	if !ok {
 		return fmt.Errorf("ptr: unexpected query type %T", other)
 	}
-	if i.level != j.level {
-		return fmt.Errorf("ptr: level mismatched! %d >< %d", i.level, j.level)
-	}
-	return nil
+	return cmpQuery(i.Query, j.Query)
 }
 
 func cmpArray(q, other Query) error {

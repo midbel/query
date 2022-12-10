@@ -5,12 +5,17 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/midbel/slices"
 )
 
 type Parser struct {
 	scan *Scanner
 	curr Token
 	peek Token
+
+	depth  int
+	parsed []Query
 }
 
 func Parse(str string) (Query, error) {
@@ -48,6 +53,7 @@ func (p *Parser) parse() (Query, error) {
 		default:
 			return nil, p.parseError("parser: expected ',' or end of input")
 		}
+		p.reset()
 	}
 	if len(list) == 1 {
 		return list[0], nil
@@ -98,13 +104,12 @@ func (p *Parser) parseLink() (Query, error) {
 	p.next()
 	var k ptr
 	if p.is(Number) {
-		n, err := strconv.Atoi(p.curr.Literal)
-		if err != nil {
-			return nil, err
-		}
 		p.next()
-		k.level = n
 	}
+	if len(p.parsed) == 0 {
+		return nil, p.parseError("no query parsed")
+	}
+	k.Query = slices.Fst(p.parsed)
 	return &k, nil
 }
 
@@ -131,12 +136,17 @@ func (p *Parser) parseDot() (Query, error) {
 }
 
 func (p *Parser) parseIdent() (Query, error) {
+	p.enter()
+	defer p.leave()
+
 	var (
 		id  ident
 		err error
 	)
 	id.ident = p.curr.Literal
 	p.next()
+	p.push(&id)
+
 	if (p.is(Dot) || p.is(Depth)) && p.peekIs(Eof) {
 		return nil, p.parseError("ident: unexpected end of input after dot")
 	}
@@ -149,6 +159,9 @@ func (p *Parser) parseIdent() (Query, error) {
 }
 
 func (p *Parser) parseIndex() (Query, error) {
+	p.enter()
+	defer p.leave()
+
 	p.next()
 	var (
 		idx index
@@ -179,6 +192,8 @@ func (p *Parser) parseIndex() (Query, error) {
 		return nil, err
 	}
 	p.next()
+	p.push(&idx)
+
 	if (p.is(Dot) || p.is(Depth)) && p.peekIs(Eof) {
 		return nil, p.parseError("index: unexpected end of input after dot")
 	}
@@ -233,6 +248,9 @@ func (p *Parser) parsePipe(q Query) (Query, error) {
 }
 
 func (p *Parser) parseArray() (Query, error) {
+	p.enter()
+	defer p.leave()
+
 	p.next()
 	var arr array
 	for !p.done() && !p.is(Rsquare) {
@@ -265,10 +283,15 @@ func (p *Parser) parseArray() (Query, error) {
 		return nil, err
 	}
 	p.next()
+	p.push(&arr)
+
 	return &arr, nil
 }
 
 func (p *Parser) parseObject() (Query, error) {
+	p.enter()
+	defer p.leave()
+
 	p.next()
 	obj := object{
 		fields: make(map[string]Query),
@@ -317,7 +340,29 @@ func (p *Parser) parseObject() (Query, error) {
 		return nil, err
 	}
 	p.next()
+	p.push(&obj)
+
 	return &obj, nil
+}
+
+func (p *Parser) enter() {
+	p.depth++
+}
+
+func (p *Parser) leave() {
+	p.depth--
+}
+
+func (p *Parser) push(q Query) {
+	if p.depth > 1 {
+		return
+	}
+	p.parsed = append(p.parsed, q)
+}
+
+func (p *Parser) reset() {
+	p.depth = 0
+	p.parsed = p.parsed[:0]
 }
 
 func (p *Parser) expect(kind rune, msg string) error {
