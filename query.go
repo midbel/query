@@ -31,16 +31,18 @@ func PipeLine(q Query, next ...Query) Query {
 }
 
 func (p *pipeline) update(str string) error {
-	for _, q := range p.queries {
+	for i := range p.queries {
 		r := strings.NewReader(str)
-		q.clear()
+		p.queries[i].clear()
 
-		if err := execute(r, q); err != nil {
+		if err := execute(r, p.queries[i]); err != nil {
 			return err
 		}
-		str = q.String()
+		str = p.queries[i].String()
 	}
-	return p.Query.update(str)
+	err := p.Query.update(str)
+	// fmt.Printf("pipeline.update: %p %T %s %v\n", p.Query, p.Query, str, err)
+	return err
 }
 
 func (p *pipeline) Clone() Query {
@@ -110,6 +112,10 @@ func (p *ptr) Clone() Query {
 	return p
 }
 
+func (p *ptr) clear() {
+	// noop
+}
+
 type recurse struct {
 	Query
 }
@@ -161,7 +167,7 @@ func (i *literal) update(string) error {
 }
 
 func (i *literal) clear() {
-
+	// noop
 }
 
 func (i *literal) Clone() Query {
