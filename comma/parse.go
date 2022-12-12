@@ -87,9 +87,6 @@ func (p *Parser) parseLiteral() (Indexer, error) {
 	lit := literal{
 		value: p.curr.Literal,
 	}
-	if p.is(Literal) {
-		lit.value = fmt.Sprintf("\"%s\"", lit.value)
-	}
 	return &lit, nil
 }
 
@@ -296,9 +293,11 @@ func (s *Scanner) scanIdent(tok *Token) {
 }
 
 func (s *Scanner) scanQuote(tok *Token) {
-	quote := s.char
+	var (
+		quote = s.char
+		pos = s.curr
+	)
 	s.read()
-	pos := s.curr
 	for !s.done() && s.char != quote {
 		s.read()
 	}
@@ -306,7 +305,7 @@ func (s *Scanner) scanQuote(tok *Token) {
 	if s.char != quote {
 		tok.Type = Invalid
 	}
-	tok.Literal = string(s.input[pos:s.curr])
+	tok.Literal = string(s.input[pos:s.next])
 }
 
 func (s *Scanner) scanNumber(tok *Token) {
