@@ -13,7 +13,7 @@ var (
 	ErrSupport  = errors.New("unsupported operation")
 	ErrZero     = errors.New("division by zero")
 	ErrArgument = errors.New("invalid number of arguments")
-	ErrCast     = errors.New("value can not be casted")
+	ErrCast     = errors.New("cast error")
 )
 
 type Indexer interface {

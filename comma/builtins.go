@@ -123,11 +123,11 @@ func runUuid(args []string) (string, error) {
 func runShiftLeft(args []string) (string, error) {
 	left, err := strconv.Atoi(slices.Fst(args))
 	if err != nil {
-		return "", err
+		return "", castNumberError(slices.Fst(args))
 	}
 	right, err := strconv.Atoi(slices.Lst(args))
 	if err != nil {
-		return "", err
+		return "", castNumberError(slices.Lst(args))
 	}
 	return strconv.Itoa(left << right), nil
 }
@@ -135,11 +135,11 @@ func runShiftLeft(args []string) (string, error) {
 func runShiftRight(args []string) (string, error) {
 	left, err := strconv.Atoi(slices.Fst(args))
 	if err != nil {
-		return "", err
+		return "", castNumberError(slices.Fst(args))
 	}
 	right, err := strconv.Atoi(slices.Lst(args))
 	if err != nil {
-		return "", err
+		return "", castNumberError(slices.Lst(args))
 	}
 	return strconv.Itoa(left >> right), nil
 }
@@ -147,7 +147,7 @@ func runShiftRight(args []string) (string, error) {
 func runAbs(args []string) (string, error) {
 	v, err := strconv.ParseFloat(slices.Fst(args), 64)
 	if err != nil {
-		return "", err
+		return "", castNumberError(slices.Fst(args))
 	}
 	return strconv.FormatFloat(math.Abs(v), 'f', -1, 64), nil
 }
@@ -157,7 +157,7 @@ func runMin(args []string) (string, error) {
 	for _, str := range args {
 		v, err := strconv.ParseFloat(str, 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(str)
 		}
 		res = math.Min(res, v)
 	}
@@ -169,7 +169,7 @@ func runMax(args []string) (string, error) {
 	for _, str := range args {
 		v, err := strconv.ParseFloat(str, 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(str)
 		}
 		res = math.Max(res, v)
 	}
@@ -179,7 +179,7 @@ func runMax(args []string) (string, error) {
 func runSqrt(args []string) (string, error) {
 	v, err := strconv.ParseFloat(slices.Fst(args), 64)
 	if err != nil {
-		return "", err
+		return "", castNumberError(slices.Fst(args))
 	}
 	return strconv.FormatFloat(math.Sqrt(v), 'f', -1, 64), nil
 }
@@ -193,7 +193,7 @@ func runAvg(args []string) (string, error) {
 	for i := range args {
 		v, err := strconv.ParseFloat(args[i], 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(args[i])
 		}
 		res += v
 	}
@@ -205,7 +205,7 @@ func runAdd(args []string) (string, error) {
 	for i := range args {
 		v, err := strconv.ParseFloat(args[i], 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(args[i])
 		}
 		res += v
 	}
@@ -217,7 +217,7 @@ func runSub(args []string) (string, error) {
 	for i := range args {
 		v, err := strconv.ParseFloat(args[i], 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(args[i])
 		}
 		res -= v
 	}
@@ -229,7 +229,7 @@ func runDiv(args []string) (string, error) {
 	for i := range args {
 		v, err := strconv.ParseFloat(args[i], 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(args[i])
 		}
 		if v == 0 {
 			return "", ErrZero
@@ -244,7 +244,7 @@ func runMul(args []string) (string, error) {
 	for i := range args {
 		v, err := strconv.ParseFloat(args[i], 64)
 		if err != nil {
-			return "", err
+			return "", castNumberError(args[i])
 		}
 		res *= v
 	}
@@ -305,6 +305,11 @@ func runDecodeB64(args []string) (string, error) {
 
 func checkArgs(n int, variadic bool, do builtinFunc) builtinFunc {
 	return func(args []string) (string, error) {
+		if len(args) != n {
+			if !variadic {
+				return "", ErrArgument
+			}
+		}
 		return do(args)
 	}
 }
@@ -323,4 +328,8 @@ func isTrue(str string) bool {
 		return true
 	}
 	return true
+}
+
+func castNumberError(str string) error {
+	return fmt.Errorf("%w: %s can not be casted to number", ErrCast, str)
 }
