@@ -1,2 +1,4 @@
 github.com/midbel/slices v0.5.2 h1:PEB+U+Zf+1+6nLgQzMFicYWQ67cDBvP0xB7iG+whyOo=
 github.com/midbel/slices v0.5.2/go.mod h1:uKstGBCfyQnPPr776jKPo/NMWpiJjYx463lANVMYSgk=
+github.com/midbel/uuid v1.0.0 h1:Wq78nbw9YHRLk4q5r/wafIRJq9qCTsC1HjZ6ZjRGiaU=
+github.com/midbel/uuid v1.0.0/go.mod h1:iAw2RG+CfBVU1cbsSVjN8SuP1TgOjB/ApXRiQDjv5Zs=

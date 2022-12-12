@@ -12,7 +12,7 @@ var (
 	ErrIndex    = errors.New("index out of range")
 	ErrSupport  = errors.New("unsupported operation")
 	ErrZero     = errors.New("division by zero")
-	ErrArgument = errors.New("invalid number of arguments")
+	ErrArgument = errors.New("invalid number of arguments given")
 	ErrCast     = errors.New("cast error")
 )
 
@@ -38,7 +38,11 @@ func (c *call) Index(row []string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s: function not defined")
 	}
-	return fn(args)
+	str, err := fn(args)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", c.name, err)
+	}
+	return withQuote(str, false), nil
 }
 
 type ternary struct {

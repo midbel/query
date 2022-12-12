@@ -204,7 +204,6 @@ func (p *Parser) exprDone() bool {
 }
 
 func (p *Parser) parseExpression(bind int) (Indexer, error) {
-	fmt.Println(p.curr, p.peek)
 	left, err := p.parsePrefix()
 	if err != nil {
 		return nil, err
@@ -526,7 +525,7 @@ func (s *Scanner) Scan() Token {
 		s.skipBlank()
 		return s.Scan()
 	default:
-		fmt.Printf("unknown????: %c %02[1]x\n", s.char)
+		tok.Type = Invalid
 	}
 	return tok
 }

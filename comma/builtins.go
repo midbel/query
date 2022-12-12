@@ -2,54 +2,56 @@ package comma
 
 import (
 	"encoding/base64"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/midbel/slices"
+	"github.com/midbel/uuid"
 )
 
 type builtinFunc func([]string) (string, error)
 
 var builtins = map[string]builtinFunc{
 	// time functions
-	"now":  checkArgs(0, false, runNow),
+	"now":  checkArgs(0, true, runNow),
 	"time": checkArgs(0, false, runTime),
 	// string functions
-	"trim":       checkArgs(0, false, runTrim),
-	"lower":      checkArgs(0, false, runLower),
-	"upper":      checkArgs(0, false, runUpper),
-	"title":      checkArgs(0, false, runTitle),
-	"replace":    checkArgs(0, false, runReplace),
-	"join":       checkArgs(0, false, runJoin),
-	"startswith": checkArgs(0, false, runStartsWith),
-	"endswith":   checkArgs(0, false, runEndsWith),
-	"contains":   checkArgs(0, false, runContains),
+	"trim":       checkArgs(1, false, runTrim),
+	"lower":      checkArgs(1, false, runLower),
+	"upper":      checkArgs(1, false, runUpper),
+	"title":      checkArgs(1, false, runTitle),
+	"replace":    checkArgs(3, false, runReplace),
+	"join":       checkArgs(0, true, runJoin),
+	"startswith": checkArgs(2, false, runStartsWith),
+	"endswith":   checkArgs(2, false, runEndsWith),
+	"contains":   checkArgs(2, false, runContains),
 	// base64
-	"b64encode": checkArgs(0, false, runEncodeB64),
-	"b64decode": checkArgs(0, false, runDecodeB64),
+	"b64encode": checkArgs(1, false, runEncodeB64),
+	"b64decode": checkArgs(1, false, runDecodeB64),
 	// math functions
-	"abs":    checkArgs(0, false, runAbs),
-	"add":    checkArgs(0, false, runAdd),
-	"mul":    checkArgs(0, false, runMul),
-	"sub":    checkArgs(0, false, runSub),
-	"div":    checkArgs(0, false, runDiv),
-	"sqrt":   checkArgs(0, false, runSqrt),
-	"avg":    checkArgs(0, false, runAvg),
-	"min":    checkArgs(0, false, runMin),
-	"max":    checkArgs(0, false, runMax),
-	"lshift": checkArgs(0, false, runShiftLeft),
-	"rshift": checkArgs(0, false, runShiftRight),
+	"abs":    checkArgs(1, false, runAbs),
+	"add":    checkArgs(2, true, runAdd),
+	"mul":    checkArgs(2, true, runMul),
+	"sub":    checkArgs(2, true, runSub),
+	"div":    checkArgs(2, true, runDiv),
+	"avg":    checkArgs(2, true, runAvg),
+	"sqrt":   checkArgs(1, false, runSqrt),
+	"min":    checkArgs(2, true, runMin),
+	"max":    checkArgs(2, true, runMax),
+	"lshift": checkArgs(2, false, runShiftLeft),
+	"rshift": checkArgs(2, false, runShiftRight),
 	// misc function
-	"len":   checkArgs(0, false, runLen),
+	"len":   checkArgs(1, false, runLen),
 	"true":  checkArgs(0, false, runTrue),
 	"false": checkArgs(0, false, runFalse),
-	"if":    checkArgs(0, false, runIf),
-	"and":   checkArgs(0, false, runAnd),
-	"or":    checkArgs(0, false, runOr),
-	"any":   checkArgs(0, false, runIf),
-	"all":   checkArgs(0, false, runAll),
+	"if":    checkArgs(3, false, runIf),
+	"and":   checkArgs(2, false, runAnd),
+	"or":    checkArgs(2, false, runOr),
+	"any":   checkArgs(1, true, runIf),
+	"all":   checkArgs(1, true, runAll),
 	"uuid":  checkArgs(0, false, runUuid),
 }
 
@@ -117,7 +119,8 @@ func runLen(args []string) (string, error) {
 }
 
 func runUuid(args []string) (string, error) {
-	return "", nil
+	uid := uuid.UUID4()
+	return uid.String(), nil
 }
 
 func runShiftLeft(args []string) (string, error) {
@@ -305,7 +308,10 @@ func runDecodeB64(args []string) (string, error) {
 
 func checkArgs(n int, variadic bool, do builtinFunc) builtinFunc {
 	return func(args []string) (string, error) {
-		if len(args) != n {
+		if x := len(args); x != n {
+			if x < n {
+				return "", ErrArgument
+			}
 			if !variadic {
 				return "", ErrArgument
 			}
