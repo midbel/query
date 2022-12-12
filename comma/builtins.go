@@ -1,6 +1,7 @@
 package comma
 
 import (
+	"encoding/base64"
 	"math"
 	"strconv"
 	"strings"
@@ -25,23 +26,31 @@ var builtins = map[string]builtinFunc{
 	"startswith": checkArgs(0, false, runStartsWith),
 	"endswith":   checkArgs(0, false, runEndsWith),
 	"contains":   checkArgs(0, false, runContains),
+	// base64
+	"b64encode": checkArgs(0, false, runEncodeB64),
+	"b64decode": checkArgs(0, false, runDecodeB64),
 	// math functions
-	"abs":  checkArgs(0, false, runAbs),
-	"add":  checkArgs(0, false, runAdd),
-	"mul":  checkArgs(0, false, runMul),
-	"sub":  checkArgs(0, false, runSub),
-	"div":  checkArgs(0, false, runDiv),
-	"sqrt": checkArgs(0, false, runSqrt),
-	"avg":  checkArgs(0, false, runAvg),
-	"min":  checkArgs(0, false, runMin),
-	"max":  checkArgs(0, false, runMax),
+	"abs":    checkArgs(0, false, runAbs),
+	"add":    checkArgs(0, false, runAdd),
+	"mul":    checkArgs(0, false, runMul),
+	"sub":    checkArgs(0, false, runSub),
+	"div":    checkArgs(0, false, runDiv),
+	"sqrt":   checkArgs(0, false, runSqrt),
+	"avg":    checkArgs(0, false, runAvg),
+	"min":    checkArgs(0, false, runMin),
+	"max":    checkArgs(0, false, runMax),
+	"lshift": checkArgs(0, false, runShiftLeft),
+	"rshift": checkArgs(0, false, runShiftRight),
 	// misc function
 	"len":   checkArgs(0, false, runLen),
 	"true":  checkArgs(0, false, runTrue),
 	"false": checkArgs(0, false, runFalse),
 	"if":    checkArgs(0, false, runIf),
+	"and":   checkArgs(0, false, runAnd),
+	"or":    checkArgs(0, false, runOr),
 	"any":   checkArgs(0, false, runIf),
 	"all":   checkArgs(0, false, runAll),
+	"uuid":  checkArgs(0, false, runUuid),
 }
 
 func runNow(args []string) (string, error) {
@@ -59,6 +68,16 @@ func runTrue(args []string) (string, error) {
 
 func runFalse(args []string) (string, error) {
 	return "false", nil
+}
+
+func runAnd(args []string) (string, error) {
+	ok := isTrue(slices.Fst(args)) && isTrue(slices.Lst(args))
+	return strconv.FormatBool(ok), nil
+}
+
+func runOr(args []string) (string, error) {
+	ok := isTrue(slices.Fst(args)) || isTrue(slices.Lst(args))
+	return strconv.FormatBool(ok), nil
 }
 
 func runIf(args []string) (string, error) {
@@ -95,6 +114,34 @@ func runAny(args []string) (string, error) {
 func runLen(args []string) (string, error) {
 	n := len(slices.Fst(args))
 	return strconv.Itoa(n), nil
+}
+
+func runUuid(args []string) (string, error) {
+	return "", nil
+}
+
+func runShiftLeft(args []string) (string, error) {
+	left, err := strconv.Atoi(slices.Fst(args))
+	if err != nil {
+		return "", err
+	}
+	right, err := strconv.Atoi(slices.Lst(args))
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(left << right), nil
+}
+
+func runShiftRight(args []string) (string, error) {
+	left, err := strconv.Atoi(slices.Fst(args))
+	if err != nil {
+		return "", err
+	}
+	right, err := strconv.Atoi(slices.Lst(args))
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(left >> right), nil
 }
 
 func runAbs(args []string) (string, error) {
@@ -242,6 +289,18 @@ func runEndsWith(args []string) (string, error) {
 
 func runJoin(args []string) (string, error) {
 	return strings.Join(slices.Slice(args), slices.Lst(args)), nil
+}
+
+func runEncodeB64(args []string) (string, error) {
+	in := slices.Fst(args)
+	str := base64.StdEncoding.EncodeToString([]byte(in))
+	return str, nil
+}
+
+func runDecodeB64(args []string) (string, error) {
+	in := slices.Fst(args)
+	str, err := base64.StdEncoding.DecodeString(in)
+	return string(str), err
 }
 
 func checkArgs(n int, variadic bool, do builtinFunc) builtinFunc {
