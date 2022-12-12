@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/midbel/query/comma"
@@ -11,10 +12,18 @@ import (
 func main() {
 	flag.Parse()
 
-	ix, err := comma.Parse(flag.Arg(0))
-	if err != nil {
+	var r io.Reader = os.Stdin
+	if f, err := os.Open(flag.Arg(1)); err == nil {
+		r = f
+		defer f.Close()
+	} else {
+		if flag.Arg(1) != "" {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+	}
+	if err := comma.Convert(r, os.Stdout, flag.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	fmt.Printf("%#v\n", ix)
 }

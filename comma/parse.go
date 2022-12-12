@@ -29,7 +29,6 @@ func (p *Parser) Parse() (Indexer, error) {
 }
 
 func (p *Parser) parse() (Indexer, error) {
-	fmt.Println(p.curr, p.peek)
 	switch p.curr.Type {
 	case Lcurly:
 		return p.parseObject()
@@ -48,60 +47,48 @@ func (p *Parser) parseIndexer() (Indexer, error) {
 	if p.is(Literal) || p.is(Number) {
 		return p.parseLiteral()
 	}
-	var list set
-	for !p.done() && !p.is(Comma) && !p.is(Rsquare) && !p.is(Rcurly) {
-		if err := p.expect(Index, "index: expected '$'"); err != nil {
+	if err := p.expect(Index, "index: expected '$'"); err != nil {
+		return nil, err
+	}
+	n, err := strconv.Atoi(p.curr.Literal)
+	if err != nil {
+		return nil, err
+	}
+	p.next()
+
+	var ix Indexer
+	switch p.curr.Type {
+	case Range:
+		p.next()
+		if err := p.expect(Index, "index: expected '$' after '.."); err != nil {
 			return nil, err
 		}
-		n, err := strconv.Atoi(p.curr.Literal)
+		e, err := strconv.Atoi(p.curr.Literal)
 		if err != nil {
 			return nil, err
 		}
 		p.next()
-
-		var ix Indexer
-		switch p.curr.Type {
-		case Comma:
-			p.next()
-			if p.is(Rsquare) || p.is(Rcurly) || p.done() {
-				return nil, p.parseError("index: expected '$' after ','")
-			}
-			ix = &index{
-				index: n,
-			}
-		case Range:
-			p.next()
-			if err := p.expect(Index, "index: expected '$' after '.."); err != nil {
-				return nil, err
-			}
-			p.next()
-			e, err := strconv.Atoi(p.curr.Literal)
-			if err != nil {
-				return nil, err
-			}
-			ix = &interval{
-				beg: n,
-				end: e,
-			}
-		case Rcurly, Rsquare:
-			ix = &index{
-				index: n,
-			}
-		default:
-			return nil, p.parseError("index: expected ',' or '..' after '$'")
+		ix = &interval{
+			beg: n,
+			end: e,
 		}
-		list.index = append(list.index, ix)
+	case Rcurly, Rsquare, Comma:
+		ix = &index{
+			index: n,
+		}
+	default:
+		return nil, p.parseError("index: expected ',' or '..' after '$'")
 	}
-	if len(list.index) == 1 {
-		return list.index[0], nil
-	}
-	return &list, nil
+	return ix, nil
 }
 
 func (p *Parser) parseLiteral() (Indexer, error) {
 	defer p.next()
 	lit := literal{
 		value: p.curr.Literal,
+	}
+	if p.is(Literal) {
+		lit.value = fmt.Sprintf("\"%s\"", lit.value)
 	}
 	return &lit, nil
 }
@@ -125,6 +112,7 @@ func (p *Parser) parseObject() (Indexer, error) {
 			return nil, err
 		}
 		obj.fields[ident] = ix
+		obj.keys = append(obj.keys, ident)
 		switch p.curr.Type {
 		case Comma:
 			p.next()
@@ -283,6 +271,7 @@ func (s *Scanner) Scan() Token {
 		s.skipBlank()
 		return s.Scan()
 	default:
+		fmt.Printf("unknown????: %c %02[1]x\n", s.char)
 	}
 	return tok
 }
@@ -343,7 +332,7 @@ func (s *Scanner) scanDelim(tok *Token) {
 		tok.Type = Comma
 	case '.':
 		tok.Type = Invalid
-		if s.peek() == s.char {
+		if k := s.peek(); k == s.char {
 			tok.Type = Range
 			s.read()
 		}
@@ -427,7 +416,7 @@ func isDelim(r rune) bool {
 }
 
 func isPunct(r rune) bool {
-	return r == ',' || r == ':'
+	return r == ',' || r == ':' || r == '.'
 }
 
 func isGroup(r rune) bool {

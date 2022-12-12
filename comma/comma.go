@@ -1,23 +1,38 @@
 package comma
 
 import (
+	"bufio"
 	"encoding/csv"
 	"errors"
 	"io"
+	"strings"
 )
 
 type Indexer interface {
-	Index([]string) error
+	Index([]string) (string, error)
 }
 
-func Convert(r io.Reader, query string) error {
+func ConvertToString(r io.Reader, query string) (string, error) {
+	var str strings.Builder
+	if err := Convert(r, &str, query); err != nil {
+		return "", err
+	}
+	return str.String(), nil
+}
+
+func Convert(r io.Reader, w io.Writer, query string) error {
 	q, err := Parse(query)
 	if err != nil {
 		return err
 	}
-	rs := csv.NewReader(r)
+	var (
+		rs = csv.NewReader(r)
+		ws = bufio.NewWriter(w)
+	)
+	rs.Read()
+	ws.WriteRune('[')
 
-	for {
+	for i := 0; ; i++ {
 		row, err := rs.Read()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -25,9 +40,17 @@ func Convert(r io.Reader, query string) error {
 			}
 			return err
 		}
-		if err := q.Index(row); err != nil {
+
+		str, err := q.Index(row)
+		if err != nil {
 			return err
 		}
+		if i > 0 {
+			ws.WriteRune(',')
+			ws.WriteRune(' ')
+		}
+		ws.WriteString(str)
 	}
-	return nil
+	ws.WriteRune(']')
+	return ws.Flush()
 }
