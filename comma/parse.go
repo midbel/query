@@ -29,6 +29,34 @@ func (p *Parser) Parse() (Indexer, error) {
 }
 
 func (p *Parser) parse() (Indexer, error) {
+	var list []Indexer
+	for !p.done() {
+		i, err := p.parseSingle()
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, i)
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Eof) {
+				return nil, fmt.Errorf("parse: unexpected end of input after ','")
+			}
+		case Eof:
+		default:
+			return nil, fmt.Errorf("parse: expected ',' or end of input")
+		}
+	}
+	if len(list) == 1 {
+		return list[0], nil
+	}
+	g := group{
+		list: list,
+	}
+	return &g, nil
+}
+
+func (p *Parser) parseSingle() (Indexer, error) {
 	switch p.curr.Type {
 	case Lcurly:
 		return p.parseObject()
@@ -104,7 +132,7 @@ func (p *Parser) parseObject() (Indexer, error) {
 			return nil, err
 		}
 		p.next()
-		ix, err := p.parse()
+		ix, err := p.parseSingle()
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +160,7 @@ func (p *Parser) parseArray() (Indexer, error) {
 	p.next()
 	var arr array
 	for !p.done() && !p.is(Rsquare) {
-		ix, err := p.parse()
+		ix, err := p.parseSingle()
 		if err != nil {
 			return nil, err
 		}

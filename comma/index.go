@@ -15,7 +15,6 @@ type group struct {
 
 func (g *group) Index(row []string) (string, error) {
 	var str strings.Builder
-	str.WriteRune('[')
 	for i := range g.list {
 		if i > 0 {
 			str.WriteRune(',')
@@ -28,7 +27,6 @@ func (g *group) Index(row []string) (string, error) {
 		}
 		str.WriteString(got)
 	}
-	str.WriteRune(']')
 	return str.String(), nil
 }
 
