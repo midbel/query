@@ -18,6 +18,23 @@ type Indexer interface {
 	Index([]string) (string, error)
 }
 
+type ternary struct {
+	cdt Indexer
+	csq Indexer
+	alt Indexer
+}
+
+func (t *ternary) Index(row []string) (string, error) {
+	res, err := t.cdt.Index(row)
+	if err != nil {
+		return "", err
+	}
+	if isTrue(res) {
+		return t.csq.Index(row)
+	}
+	return t.alt.Index(row)
+}
+
 type binary struct {
 	left  Indexer
 	right Indexer
@@ -66,9 +83,6 @@ type unary struct {
 }
 
 func (u *unary) Index(row []string) (string, error) {
-	if u.op != Sub {
-		return "", ErrSupport
-	}
 	got, err := u.right.Index(row)
 	if err != nil {
 		return "", err
@@ -77,8 +91,14 @@ func (u *unary) Index(row []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	return strconv.FormatFloat(-n, 'f', -1, 64), nil
+	switch u.op {
+	case Sub:
+		return strconv.FormatFloat(-n, 'f', -1, 64), nil
+	case Not:
+		return strconv.FormatBool(n != 0), nil
+	default:
+		return "", ErrSupport
+	}
 }
 
 type group struct {
@@ -188,6 +208,7 @@ func (i *index) Index(row []string) (string, error) {
 type interval struct {
 	beg  int
 	end  int
+	add  bool
 	flat bool
 }
 
@@ -201,6 +222,25 @@ func (i *interval) Index(row []string) (string, error) {
 	if i.end < 0 || i.end > len(row) {
 		return "", ErrIndex
 	}
+	if !i.add {
+		return i.asArray(row)
+	}
+	return i.asValue(row)
+}
+
+func (i *interval) asValue(row []string) (string, error) {
+	var res float64
+	for _, str := range row[i.beg : i.end+1] {
+		v, err := strconv.ParseFloat(str, 64)
+		if err != nil {
+			return "", err
+		}
+		res += v
+	}
+	return strconv.FormatFloat(res, 'f', -1, 64), nil
+}
+
+func (i *interval) asArray(row []string) (string, error) {
 	var (
 		str strings.Builder
 		pos int
@@ -244,6 +284,22 @@ func withQuote(str string, all bool) string {
 		}
 	}
 	return fmt.Sprintf("%q", str)
+}
+
+func isTrue(str string) bool {
+	if str == "" {
+		return false
+	}
+	if ok, err := strconv.ParseBool(str); err == nil {
+		return ok
+	}
+	if n, err := strconv.ParseFloat(str, 64); err == nil {
+		if n == 0 {
+			return false
+		}
+		return true
+	}
+	return true
 }
 
 func apply(left, right string, do func(float64, float64) (float64, error)) (string, error) {

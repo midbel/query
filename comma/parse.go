@@ -27,18 +27,20 @@ func Parse(str string) (Indexer, error) {
 	}
 	p.prefix = map[rune]func() (Indexer, error){
 		Sub:     p.parseUnary,
+		Not:     p.parseUnary,
 		Index:   p.parseUnary,
 		Number:  p.parseUnary,
 		Literal: p.parseUnary,
 		Lparen:  p.parseGroup,
 	}
 	p.infix = map[rune]func(Indexer) (Indexer, error){
-		Add: p.parseBinary,
-		Sub: p.parseBinary,
-		Mul: p.parseBinary,
-		Div: p.parseBinary,
-		Pow: p.parseBinary,
-		Mod: p.parseBinary,
+		Add:      p.parseBinary,
+		Sub:      p.parseBinary,
+		Mul:      p.parseBinary,
+		Div:      p.parseBinary,
+		Pow:      p.parseBinary,
+		Mod:      p.parseBinary,
+		Question: p.parseTernary,
 	}
 	p.next()
 	p.next()
@@ -89,7 +91,7 @@ func (p *Parser) parseSingle() (Indexer, error) {
 }
 
 func (p *Parser) parseIndexer() (Indexer, error) {
-	if p.peekIs(Range) {
+	if p.peekIs(Range) || p.peekIs(RangeAdd) {
 		return p.parseRange()
 	}
 	return p.parseExpression(bindLowest)
@@ -104,9 +106,9 @@ func (p *Parser) parseRange() (Indexer, error) {
 		return nil, err
 	}
 	p.next()
-	if err := p.expect(Range, "range: expected '..'"); err != nil {
-		return nil, err
-	}
+
+	add := p.is(RangeAdd)
+
 	p.next()
 	if err := p.expect(Index, "index: expected '$' after '.."); err != nil {
 		return nil, err
@@ -118,6 +120,7 @@ func (p *Parser) parseRange() (Indexer, error) {
 	rg := interval{
 		beg:  beg,
 		end:  end,
+		add:  add,
 		flat: p.stack.Top() == Lsquare,
 	}
 	p.next()
@@ -229,6 +232,29 @@ func (p *Parser) parseInfix(left Indexer) (Indexer, error) {
 	return fn(left)
 }
 
+func (p *Parser) parseTernary(left Indexer) (Indexer, error) {
+	p.next()
+	test := ternary{
+		cdt: left,
+	}
+	csq, err := p.parseExpression(bindLowest)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.expect(Colon, "ternary: expected ':'"); err != nil {
+		return nil, err
+	}
+	p.next()
+
+	alt, err := p.parseExpression(bindLowest)
+	if err != nil {
+		return nil, err
+	}
+	test.csq = csq
+	test.alt = alt
+	return &test, nil
+}
+
 func (p *Parser) parseBinary(left Indexer) (Indexer, error) {
 	bin := binary{
 		left: left,
@@ -326,8 +352,24 @@ func (t Token) String() string {
 	switch t.Type {
 	case Eof:
 		return "<eof>"
+	case Not:
+		return "<not>"
 	case Range:
 		return "<range>"
+	case RangeAdd:
+		return "<range-add>"
+	case Add:
+		return "<add>"
+	case Sub:
+		return "<subtract>"
+	case Div:
+		return "<divide>"
+	case Mul:
+		return "<multiply>"
+	case Mod:
+		return "<modulo>"
+	case Pow:
+		return "<power>"
 	case Comma:
 		return "<comma>"
 	case Lsquare:
@@ -340,6 +382,8 @@ func (t Token) String() string {
 		return "<rcurly>"
 	case Colon:
 		return "<colon>"
+	case Question:
+		return "<question>"
 	case Invalid:
 		if t.Literal != "" {
 			return fmt.Sprintf("invalid(%s)", t.Literal)
@@ -370,12 +414,15 @@ const (
 	Rparen
 	Colon
 	Range
+	RangeAdd
 	Add
 	Sub
 	Mul
 	Div
 	Pow
 	Mod
+	Not
+	Question
 	Invalid
 )
 
@@ -497,6 +544,11 @@ func (s *Scanner) scanOperator(tok *Token) {
 	switch s.char {
 	case '+':
 		tok.Type = Add
+		if s.check('.', '.') {
+			tok.Type = RangeAdd
+			s.read()
+			s.read()
+		}
 	case '-':
 		tok.Type = Sub
 	case '*':
@@ -509,6 +561,10 @@ func (s *Scanner) scanOperator(tok *Token) {
 		tok.Type = Div
 	case '%':
 		tok.Type = Mod
+	case '!':
+		tok.Type = Not
+	case '?':
+		tok.Type = Question
 	default:
 		tok.Type = Invalid
 	}
@@ -573,6 +629,21 @@ func (s *Scanner) peek() rune {
 	return c
 }
 
+func (s *Scanner) check(vs ...rune) bool {
+	next := s.next
+	for i := range vs {
+		if next >= len(s.input) {
+			return false
+		}
+		r, z := utf8.DecodeRune(s.input[next:])
+		if r != vs[i] {
+			return false
+		}
+		next += z
+	}
+	return true
+}
+
 func (s *Scanner) done() bool {
 	return s.curr >= len(s.input)
 }
@@ -610,7 +681,7 @@ func isIndex(r rune) bool {
 }
 
 func isOperator(r rune) bool {
-	return r == '+' || r == '-' || r == '*' || r == '%' || r == '/'
+	return r == '+' || r == '-' || r == '*' || r == '%' || r == '/' || r == '!' || r == '?'
 }
 
 func isDelim(r rune) bool {
