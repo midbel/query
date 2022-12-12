@@ -41,7 +41,6 @@ func (p *pipeline) update(str string) error {
 		str = p.queries[i].String()
 	}
 	err := p.Query.update(str)
-	// fmt.Printf("pipeline.update: %p %T %s %v\n", p.Query, p.Query, str, err)
 	return err
 }
 
