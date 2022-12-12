@@ -3,33 +3,82 @@ package comma
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
 
-var ErrIndex = errors.New("index out of range")
+var (
+	ErrIndex   = errors.New("index out of range")
+	ErrSupport = errors.New("unsupported operation")
+	ErrZero    = errors.New("division by zero")
+)
 
 type Indexer interface {
 	Index([]string) (string, error)
 }
 
 type binary struct {
-	left  int
-	right int
+	left  Indexer
+	right Indexer
 	op    rune
 }
 
 func (b *binary) Index(row []string) (string, error) {
-	return "", nil
+	left, err := b.left.Index(row)
+	if err != nil {
+		return "", err
+	}
+	right, err := b.right.Index(row)
+	if err != nil {
+		return "", err
+	}
+	return apply(left, right, func(left, right float64) (float64, error) {
+		switch b.op {
+		case Add:
+			left += right
+		case Sub:
+			left -= right
+		case Mul:
+			left *= right
+		case Pow:
+			left = math.Pow(left, right)
+		case Div:
+			if right == 0 {
+				return 0, ErrZero
+			}
+			left /= right
+		case Mod:
+			if right == 0 {
+				return 0, ErrZero
+			}
+			left = math.Mod(left, right)
+		default:
+			return 0, ErrSupport
+		}
+		return left, nil
+	})
 }
 
 type unary struct {
-	right int
+	right Indexer
 	op    rune
 }
 
 func (u *unary) Index(row []string) (string, error) {
-	return "", nil
+	if u.op != Sub {
+		return "", ErrSupport
+	}
+	got, err := u.right.Index(row)
+	if err != nil {
+		return "", err
+	}
+	n, err := strconv.ParseFloat(got, 64)
+	if err != nil {
+		return "", err
+	}
+
+	return strconv.FormatFloat(-n, 'f', -1, 64), nil
 }
 
 type group struct {
@@ -195,4 +244,20 @@ func withQuote(str string, all bool) string {
 		}
 	}
 	return fmt.Sprintf("%q", str)
+}
+
+func apply(left, right string, do func(float64, float64) (float64, error)) (string, error) {
+	x, err := strconv.ParseFloat(left, 64)
+	if err != nil {
+		return "", err
+	}
+	y, err := strconv.ParseFloat(right, 64)
+	if err != nil {
+		return "", err
+	}
+	res, err := do(x, y)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatFloat(res, 'f', -1, 64), nil
 }

@@ -14,13 +14,31 @@ type Parser struct {
 	curr Token
 	peek Token
 
+	prefix map[rune]func() (Indexer, error)
+	infix  map[rune]func(Indexer) (Indexer, error)
+
 	stack *slices.Stack[rune]
 }
 
 func Parse(str string) (Indexer, error) {
 	p := Parser{
-		scan: Scan(strings.TrimSpace(str)),
+		scan:  Scan(strings.TrimSpace(str)),
 		stack: slices.New[rune](),
+	}
+	p.prefix = map[rune]func() (Indexer, error){
+		Sub:     p.parseUnary,
+		Index:   p.parseUnary,
+		Number:  p.parseUnary,
+		Literal: p.parseUnary,
+		Lparen:  p.parseGroup,
+	}
+	p.infix = map[rune]func(Indexer) (Indexer, error){
+		Add: p.parseBinary,
+		Sub: p.parseBinary,
+		Mul: p.parseBinary,
+		Div: p.parseBinary,
+		Pow: p.parseBinary,
+		Mod: p.parseBinary,
 	}
 	p.next()
 	p.next()
@@ -65,20 +83,20 @@ func (p *Parser) parseSingle() (Indexer, error) {
 		return p.parseObject()
 	case Lsquare:
 		return p.parseArray()
-	case Index:
-		return p.parseIndexer()
-	case Number, Literal:
-		return p.parseLiteral()
 	default:
-		return nil, p.parseError("parse: expected '$', {' or '['")
+		return p.parseIndexer()
 	}
 }
 
 func (p *Parser) parseIndexer() (Indexer, error) {
-	if p.is(Literal) || p.is(Number) {
-		return p.parseLiteral()
+	if p.peekIs(Range) {
+		return p.parseRange()
 	}
-	if err := p.expect(Index, "index: expected '$'"); err != nil {
+	return p.parseExpression(bindLowest)
+}
+
+func (p *Parser) parseRange() (Indexer, error) {
+	if err := p.expect(Index, "range: expected '$'"); err != nil {
 		return nil, err
 	}
 	beg, err := strconv.Atoi(p.curr.Literal)
@@ -86,40 +104,24 @@ func (p *Parser) parseIndexer() (Indexer, error) {
 		return nil, err
 	}
 	p.next()
-
-	var ix Indexer
-	switch p.curr.Type {
-	case Range:
-		p.next()
-		if err := p.expect(Index, "index: expected '$' after '.."); err != nil {
-			return nil, err
-		}
-		end, err := strconv.Atoi(p.curr.Literal)
-		if err != nil {
-			return nil, err
-		}
-		p.next()
-		ix = &interval{
-			beg:  beg,
-			end:  end,
-			flat: p.stack.Top() == Lsquare,
-		}
-	case Rcurly, Rsquare, Comma:
-		ix = &index{
-			index: beg,
-		}
-	default:
-		return nil, p.parseError("index: expected ',' or '..' after '$'")
+	if err := p.expect(Range, "range: expected '..'"); err != nil {
+		return nil, err
 	}
-	return ix, nil
-}
-
-func (p *Parser) parseLiteral() (Indexer, error) {
-	defer p.next()
-	lit := literal{
-		value: p.curr.Literal,
+	p.next()
+	if err := p.expect(Index, "index: expected '$' after '.."); err != nil {
+		return nil, err
 	}
-	return &lit, nil
+	end, err := strconv.Atoi(p.curr.Literal)
+	if err != nil {
+		return nil, err
+	}
+	rg := interval{
+		beg:  beg,
+		end:  end,
+		flat: p.stack.Top() == Lsquare,
+	}
+	p.next()
+	return &rg, nil
 }
 
 func (p *Parser) parseObject() (Indexer, error) {
@@ -193,6 +195,100 @@ func (p *Parser) parseArray() (Indexer, error) {
 	return &arr, nil
 }
 
+func (p *Parser) exprDone() bool {
+	return p.done() || p.is(Comma) || p.is(Rcurly) || p.is(Rsquare)
+}
+
+func (p *Parser) parseExpression(bind int) (Indexer, error) {
+	left, err := p.parsePrefix()
+	if err != nil {
+		return nil, err
+	}
+	for !p.exprDone() && bind < bindings.Get(p.curr.Type) {
+		left, err = p.parseInfix(left)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return left, nil
+}
+
+func (p *Parser) parsePrefix() (Indexer, error) {
+	fn, ok := p.prefix[p.curr.Type]
+	if !ok {
+		return nil, p.parseError("token can not be parsed as prefix")
+	}
+	return fn()
+}
+
+func (p *Parser) parseInfix(left Indexer) (Indexer, error) {
+	fn, ok := p.infix[p.curr.Type]
+	if !ok {
+		return nil, p.parseError("token can not be parsed as infix")
+	}
+	return fn(left)
+}
+
+func (p *Parser) parseBinary(left Indexer) (Indexer, error) {
+	bin := binary{
+		left: left,
+		op:   p.curr.Type,
+	}
+	p.next()
+	right, err := p.parseExpression(bindings.Get(bin.op))
+	if err != nil {
+		return nil, err
+	}
+	bin.right = right
+	return &bin, nil
+}
+
+func (p *Parser) parseGroup() (Indexer, error) {
+	p.next()
+	ix, err := p.parseExpression(bindLowest)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.expect(Rparen, "group: expected ')'"); err != nil {
+		return nil, err
+	}
+	p.next()
+	return ix, nil
+}
+
+func (p *Parser) parseUnary() (Indexer, error) {
+	var ix Indexer
+	switch p.curr.Type {
+	case Sub:
+		p.next()
+		right, err := p.parseExpression(bindPrefix)
+		if err != nil {
+			return nil, err
+		}
+		ix = &unary{
+			op:    Sub,
+			right: right,
+		}
+	case Index:
+		n, err := strconv.Atoi(p.curr.Literal)
+		if err != nil {
+			return nil, err
+		}
+		ix = &index{
+			index: n,
+		}
+		p.next()
+	case Number, Literal:
+		ix = &literal{
+			value: p.curr.Literal,
+		}
+		p.next()
+	default:
+		return nil, p.parseError("unsupported unary token")
+	}
+	return ix, nil
+}
+
 func (p *Parser) done() bool {
 	return p.is(Eof)
 }
@@ -204,6 +300,10 @@ func (p *Parser) next() {
 
 func (p *Parser) is(kind rune) bool {
 	return p.curr.Type == kind
+}
+
+func (p *Parser) peekIs(kind rune) bool {
+	return p.peek.Type == kind
 }
 
 func (p *Parser) expect(kind rune, msg string) error {
@@ -279,6 +379,32 @@ const (
 	Invalid
 )
 
+type bindmap map[rune]int
+
+var bindings = bindmap{
+	Add: bindAdd,
+	Sub: bindAdd,
+	Mul: bindMul,
+	Div: bindMul,
+	Pow: bindMul,
+	Mod: bindMul,
+}
+
+const (
+	bindLowest = iota
+	bindAdd
+	bindMul
+	bindPrefix
+)
+
+func (b bindmap) Get(k rune) int {
+	p, ok := b[k]
+	if !ok {
+		p = bindLowest
+	}
+	return p
+}
+
 type Scanner struct {
 	input []byte
 	curr  int
@@ -343,7 +469,7 @@ func (s *Scanner) scanIdent(tok *Token) {
 func (s *Scanner) scanQuote(tok *Token) {
 	var (
 		quote = s.char
-		pos = s.curr
+		pos   = s.curr
 	)
 	s.read()
 	for !s.done() && s.char != quote {
