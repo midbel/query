@@ -41,6 +41,7 @@ func Parse(str string) (Indexer, error) {
 		Pow:      p.parseBinary,
 		Mod:      p.parseBinary,
 		Question: p.parseTernary,
+		Lparen:   p.parseCall,
 	}
 	p.next()
 	p.next()
@@ -203,6 +204,7 @@ func (p *Parser) exprDone() bool {
 }
 
 func (p *Parser) parseExpression(bind int) (Indexer, error) {
+	fmt.Println(p.curr, p.peek)
 	left, err := p.parsePrefix()
 	if err != nil {
 		return nil, err
@@ -253,6 +255,39 @@ func (p *Parser) parseTernary(left Indexer) (Indexer, error) {
 	test.csq = csq
 	test.alt = alt
 	return &test, nil
+}
+
+func (p *Parser) parseCall(left Indexer) (Indexer, error) {
+	i, ok := left.(*literal)
+	if !ok {
+		return nil, p.parseError("invalid call operator")
+	}
+	c := call{
+		name: i.value,
+	}
+	p.next()
+	for !p.done() && !p.is(Rparen) {
+		ix, err := p.parseExpression(bindLowest)
+		if err != nil {
+			return nil, err
+		}
+		c.args = append(c.args, ix)
+		switch p.curr.Type {
+		case Comma:
+			p.next()
+			if p.is(Rparen) {
+				return nil, p.parseError("call: expected argument after ','")
+			}
+		case Rparen:
+		default:
+			return nil, p.parseError("call: expected ',' or ')'")
+		}
+	}
+	if err := p.expect(Rparen, "call: expected ')' after arguments"); err != nil {
+		return nil, err
+	}
+	p.next()
+	return &c, nil
 }
 
 func (p *Parser) parseBinary(left Indexer) (Indexer, error) {
@@ -429,12 +464,13 @@ const (
 type bindmap map[rune]int
 
 var bindings = bindmap{
-	Add: bindAdd,
-	Sub: bindAdd,
-	Mul: bindMul,
-	Div: bindMul,
-	Pow: bindMul,
-	Mod: bindMul,
+	Add:    bindAdd,
+	Sub:    bindAdd,
+	Mul:    bindMul,
+	Div:    bindMul,
+	Pow:    bindMul,
+	Mod:    bindMul,
+	Lparen: bindCall,
 }
 
 const (
@@ -442,6 +478,7 @@ const (
 	bindAdd
 	bindMul
 	bindPrefix
+	bindCall
 )
 
 func (b bindmap) Get(k rune) int {

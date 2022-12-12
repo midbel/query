@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -16,6 +17,33 @@ var (
 
 type Indexer interface {
 	Index([]string) (string, error)
+}
+
+var builtins = map[string]func([]string) (string, error){
+	"now": func(args []string) (string, error) {
+		return time.Now().Format(time.RFC3339), nil
+	},
+}
+
+type call struct {
+	name string
+	args []Indexer
+}
+
+func (c *call) Index(row []string) (string, error) {
+	var args []string
+	for i := range c.args {
+		got, err := c.args[i].Index(row)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, got)
+	}
+	fn, ok := builtins[c.name]
+	if !ok {
+		return "", fmt.Errorf("%s: function not defined")
+	}
+	return fn(args)
 }
 
 type ternary struct {
