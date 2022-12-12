@@ -19,7 +19,7 @@ type Parser struct {
 
 func Parse(str string) (Indexer, error) {
 	p := Parser{
-		scan:  Scan(strings.TrimSpace(str)),
+		scan: Scan(strings.TrimSpace(str)),
 		stack: slices.New[rune](),
 	}
 	p.next()
@@ -266,8 +266,16 @@ const (
 	Rsquare
 	Lcurly
 	Rcurly
+	Lparen
+	Rparen
 	Colon
 	Range
+	Add
+	Sub
+	Mul
+	Div
+	Pow
+	Mod
 	Invalid
 )
 
@@ -298,6 +306,8 @@ func (s *Scanner) Scan() Token {
 		s.scanQuote(&tok)
 	case isDigit(s.char):
 		s.scanNumber(&tok)
+	case isOperator(s.char):
+		s.scanOperator(&tok)
 	case isDelim(s.char):
 		s.scanDelim(&tok)
 	case isIndex(s.char):
@@ -333,7 +343,7 @@ func (s *Scanner) scanIdent(tok *Token) {
 func (s *Scanner) scanQuote(tok *Token) {
 	var (
 		quote = s.char
-		pos   = s.curr
+		pos = s.curr
 	)
 	s.read()
 	for !s.done() && s.char != quote {
@@ -357,6 +367,27 @@ func (s *Scanner) scanNumber(tok *Token) {
 	tok.Literal = string(s.input[pos:s.curr])
 }
 
+func (s *Scanner) scanOperator(tok *Token) {
+	switch s.char {
+	case '+':
+		tok.Type = Add
+	case '-':
+		tok.Type = Sub
+	case '*':
+		tok.Type = Mul
+		if k := s.peek(); k == s.char {
+			tok.Type = Pow
+			s.read()
+		}
+	case '/':
+		tok.Type = Div
+	case '%':
+		tok.Type = Mod
+	default:
+		tok.Type = Invalid
+	}
+}
+
 func (s *Scanner) scanDelim(tok *Token) {
 	switch s.char {
 	case '{':
@@ -377,6 +408,10 @@ func (s *Scanner) scanDelim(tok *Token) {
 		tok.Type = Lsquare
 	case ']':
 		tok.Type = Rsquare
+	case '(':
+		tok.Type = Lparen
+	case ')':
+		tok.Type = Rparen
 	default:
 		tok.Type = Invalid
 	}
@@ -448,6 +483,10 @@ func isIndex(r rune) bool {
 	return r == '$'
 }
 
+func isOperator(r rune) bool {
+	return r == '+' || r == '-' || r == '*' || r == '%' || r == '/'
+}
+
 func isDelim(r rune) bool {
 	return isPunct(r) || isGroup(r)
 }
@@ -457,5 +496,5 @@ func isPunct(r rune) bool {
 }
 
 func isGroup(r rune) bool {
-	return r == '[' || r == ']' || r == '{' || r == '}'
+	return r == '[' || r == ']' || r == '{' || r == '}' || r == '(' || r == ')'
 }

@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-type Indexer interface {
-	Index([]string) (string, error)
-}
-
 func ConvertToString(r io.Reader, query string) (string, error) {
 	var str strings.Builder
 	if err := Convert(r, &str, query); err != nil {

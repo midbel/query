@@ -9,6 +9,29 @@ import (
 
 var ErrIndex = errors.New("index out of range")
 
+type Indexer interface {
+	Index([]string) (string, error)
+}
+
+type binary struct {
+	left  int
+	right int
+	op    rune
+}
+
+func (b *binary) Index(row []string) (string, error) {
+	return "", nil
+}
+
+type unary struct {
+	right int
+	op    rune
+}
+
+func (u *unary) Index(row []string) (string, error) {
+	return "", nil
+}
+
 type group struct {
 	list []Indexer
 }
