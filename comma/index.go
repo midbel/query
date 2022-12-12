@@ -114,8 +114,9 @@ func (i *index) Index(row []string) (string, error) {
 }
 
 type interval struct {
-	beg int
-	end int
+	beg  int
+	end  int
+	flat bool
 }
 
 func (i *interval) Index(row []string) (string, error) {
@@ -132,7 +133,9 @@ func (i *interval) Index(row []string) (string, error) {
 		str strings.Builder
 		pos int
 	)
-	str.WriteRune('[')
+	if !i.flat {
+		str.WriteRune('[')
+	}
 	for j := i.beg; j <= i.end; j++ {
 		if pos > 0 {
 			str.WriteRune(',')
@@ -141,9 +144,10 @@ func (i *interval) Index(row []string) (string, error) {
 		pos++
 		str.WriteString(withQuote(row[j], false))
 	}
-	str.WriteRune(']')
+	if !i.flat {
+		str.WriteRune(']')
+	}
 	return str.String(), nil
-	return "", nil
 }
 
 type literal struct {

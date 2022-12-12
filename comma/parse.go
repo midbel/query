@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/midbel/slices"
 )
 
 type Parser struct {
@@ -12,12 +14,13 @@ type Parser struct {
 	curr Token
 	peek Token
 
-	fields []string
+	stack *slices.Stack[rune]
 }
 
 func Parse(str string) (Indexer, error) {
 	p := Parser{
-		scan: Scan(strings.TrimSpace(str)),
+		scan:  Scan(strings.TrimSpace(str)),
+		stack: slices.New[rune](),
 	}
 	p.next()
 	p.next()
@@ -78,7 +81,7 @@ func (p *Parser) parseIndexer() (Indexer, error) {
 	if err := p.expect(Index, "index: expected '$'"); err != nil {
 		return nil, err
 	}
-	n, err := strconv.Atoi(p.curr.Literal)
+	beg, err := strconv.Atoi(p.curr.Literal)
 	if err != nil {
 		return nil, err
 	}
@@ -91,18 +94,19 @@ func (p *Parser) parseIndexer() (Indexer, error) {
 		if err := p.expect(Index, "index: expected '$' after '.."); err != nil {
 			return nil, err
 		}
-		e, err := strconv.Atoi(p.curr.Literal)
+		end, err := strconv.Atoi(p.curr.Literal)
 		if err != nil {
 			return nil, err
 		}
 		p.next()
 		ix = &interval{
-			beg: n,
-			end: e,
+			beg:  beg,
+			end:  end,
+			flat: p.stack.Top() == Lsquare,
 		}
 	case Rcurly, Rsquare, Comma:
 		ix = &index{
-			index: n,
+			index: beg,
 		}
 	default:
 		return nil, p.parseError("index: expected ',' or '..' after '$'")
@@ -119,6 +123,9 @@ func (p *Parser) parseLiteral() (Indexer, error) {
 }
 
 func (p *Parser) parseObject() (Indexer, error) {
+	p.stack.Push(Lcurly)
+	defer p.stack.Pop()
+
 	p.next()
 	var obj object
 	obj.fields = make(map[string]Indexer)
@@ -157,6 +164,9 @@ func (p *Parser) parseObject() (Indexer, error) {
 }
 
 func (p *Parser) parseArray() (Indexer, error) {
+	p.stack.Push(Lsquare)
+	defer p.stack.Pop()
+
 	p.next()
 	var arr array
 	for !p.done() && !p.is(Rsquare) {
@@ -323,7 +333,7 @@ func (s *Scanner) scanIdent(tok *Token) {
 func (s *Scanner) scanQuote(tok *Token) {
 	var (
 		quote = s.char
-		pos = s.curr
+		pos   = s.curr
 	)
 	s.read()
 	for !s.done() && s.char != quote {
