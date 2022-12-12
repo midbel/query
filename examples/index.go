@@ -10,6 +10,7 @@ import (
 )
 
 func main() {
+	kind := flag.String("k", "comma", "")
 	flag.Parse()
 
 	var r io.Reader = os.Stdin
@@ -22,7 +23,19 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	if err := comma.Convert(r, os.Stdout, flag.Arg(0)); err != nil {
+	var conv *comma.Converter
+	switch *kind {
+	case "space":
+		conv = comma.Space()
+	case "tab":
+		conv = comma.Tsv()
+	case "comma":
+		conv = comma.Csv()
+	default:
+		fmt.Fprintln(os.Stderr, "unsupported file type")
+		os.Exit(2)
+	}
+	if err := conv.Convert(r, os.Stdout, flag.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}

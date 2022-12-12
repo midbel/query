@@ -8,15 +8,39 @@ import (
 	"strings"
 )
 
+type Converter struct {
+	Fields []string
+	SkipHeader bool
+	delim  rune
+}
+
+func Csv() *Converter {
+	return createConverter(',')
+}
+
+func Tsv() *Converter {
+	return createConverter('\t')
+}
+
+func Space() *Converter {
+	return createConverter(' ')
+}
+
 func ConvertToString(r io.Reader, query string) (string, error) {
 	var str strings.Builder
-	if err := Convert(r, &str, query); err != nil {
+	if err := Csv().Convert(r, &str, query); err != nil {
 		return "", err
 	}
 	return str.String(), nil
 }
 
-func Convert(r io.Reader, w io.Writer, query string) error {
+func createConverter(comma rune) *Converter {
+	return &Converter{
+		delim: comma,
+	}
+}
+
+func (c Converter) Convert(r io.Reader, w io.Writer, query string) error {
 	q, err := Parse(query)
 	if err != nil {
 		return err
@@ -25,7 +49,12 @@ func Convert(r io.Reader, w io.Writer, query string) error {
 		rs = csv.NewReader(r)
 		ws = bufio.NewWriter(w)
 	)
-	rs.Read()
+	rs.TrimLeadingSpace = true
+	rs.Comma = c.delim
+
+	if c.SkipHeader {
+		rs.Read()
+	}
 	ws.WriteRune('[')
 
 	for i := 0; ; i++ {
@@ -49,4 +78,6 @@ func Convert(r io.Reader, w io.Writer, query string) error {
 	}
 	ws.WriteRune(']')
 	return ws.Flush()
+
+	return nil
 }
