@@ -6,23 +6,18 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var (
-	ErrIndex   = errors.New("index out of range")
-	ErrSupport = errors.New("unsupported operation")
-	ErrZero    = errors.New("division by zero")
+	ErrIndex    = errors.New("index out of range")
+	ErrSupport  = errors.New("unsupported operation")
+	ErrZero     = errors.New("division by zero")
+	ErrArgument = errors.New("invalid number of arguments")
+	ErrCast     = errors.New("value can not be casted")
 )
 
 type Indexer interface {
 	Index([]string) (string, error)
-}
-
-var builtins = map[string]func([]string) (string, error){
-	"now": func(args []string) (string, error) {
-		return time.Now().Format(time.RFC3339), nil
-	},
 }
 
 type call struct {
@@ -312,22 +307,6 @@ func withQuote(str string, all bool) string {
 		}
 	}
 	return fmt.Sprintf("%q", str)
-}
-
-func isTrue(str string) bool {
-	if str == "" {
-		return false
-	}
-	if ok, err := strconv.ParseBool(str); err == nil {
-		return ok
-	}
-	if n, err := strconv.ParseFloat(str, 64); err == nil {
-		if n == 0 {
-			return false
-		}
-		return true
-	}
-	return true
 }
 
 func apply(left, right string, do func(float64, float64) (float64, error)) (string, error) {
