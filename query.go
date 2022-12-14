@@ -8,6 +8,8 @@ import (
 	"github.com/midbel/slices"
 )
 
+const Identity = "."
+
 type Query interface {
 	fmt.Stringer
 

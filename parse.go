@@ -20,7 +20,7 @@ type Parser struct {
 
 func Parse(str string) (Query, error) {
 	str = strings.TrimSpace(str)
-	if str == "." {
+	if str == Identity {
 		return All(), nil
 	}
 	p := Parser{

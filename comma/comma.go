@@ -9,9 +9,9 @@ import (
 )
 
 type Converter struct {
-	Fields []string
+	Fields     []string
 	SkipHeader bool
-	delim  rune
+	delim      rune
 }
 
 func Csv() *Converter {
