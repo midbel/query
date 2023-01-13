@@ -3,20 +3,12 @@ package query
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
 )
-
-type Position struct {
-	Line int
-	Col  int
-}
-
-func (p Position) String() string {
-	return fmt.Sprintf("%d:%d", p.Line, p.Col)
-}
 
 func Filter(r io.Reader, query string) ([]string, error) {
 	q, err := Parse(query)
@@ -40,13 +32,36 @@ func Execute(r io.Reader, query string) (string, error) {
 	return q.String(), nil
 }
 
+func Decode(r io.Reader, query string, val interface{}) error {
+	q, err := Parse(query)
+	if err != nil {
+		return err
+	}
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	go execute(io.TeeReader(r, pw), query)
+	return json.NewDecoder(pr).Decode(val)
+}
+
 func execute(r io.Reader, q Query) error {
 	rs := prepare(r)
 	return rs.Read(q)
 }
 
+type Position struct {
+	Line int
+	Col  int
+}
+
+func (p Position) String() string {
+	return fmt.Sprintf("%d:%d", p.Line, p.Col)
+}
+
 type reader struct {
 	inner io.RuneScanner
+	writer io.Writer
 	file  string
 	depth int
 
@@ -65,6 +80,13 @@ func prepare(r io.Reader) *reader {
 		rs.file = n.Name()
 	}
 	return &rs
+}
+
+func (r *reader) WriteTo(w io.Writer) {
+	if r.writer != nil {
+		return nil
+	}
+	r.writer = w
 }
 
 func (r *reader) Read(q Query) error {
@@ -211,7 +233,11 @@ func (r *reader) filter(q Query, key string) error {
 
 func (r *reader) update(q Query, key string) error {
 	str := r.unwrap()
-	return q.update(str)
+	err := q.update(str)
+	if err == nil && r.writer != nil {
+		_, err = io.WriteString(r.writer, str)
+	}
+	return err
 }
 
 func (r *reader) literal() (string, error) {
