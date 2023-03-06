@@ -3,7 +3,6 @@ package query
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,19 +31,6 @@ func Execute(r io.Reader, query string) (string, error) {
 	return q.String(), nil
 }
 
-func Decode(r io.Reader, query string, val interface{}) error {
-	q, err := Parse(query)
-	if err != nil {
-		return err
-	}
-	pr, pw := io.Pipe()
-	defer pr.Close()
-	defer pw.Close()
-
-	go execute(io.TeeReader(r, pw), query)
-	return json.NewDecoder(pr).Decode(val)
-}
-
 func execute(r io.Reader, q Query) error {
 	rs := prepare(r)
 	return rs.Read(q)
@@ -60,10 +46,10 @@ func (p Position) String() string {
 }
 
 type reader struct {
-	inner io.RuneScanner
+	inner  io.RuneScanner
 	writer io.Writer
-	file  string
-	depth int
+	file   string
+	depth  int
 
 	prev      Position
 	curr      Position
@@ -80,13 +66,6 @@ func prepare(r io.Reader) *reader {
 		rs.file = n.Name()
 	}
 	return &rs
-}
-
-func (r *reader) WriteTo(w io.Writer) {
-	if r.writer != nil {
-		return nil
-	}
-	r.writer = w
 }
 
 func (r *reader) Read(q Query) error {
