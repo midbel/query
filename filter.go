@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	// "unicode/utf8"
 )
 
 func Filter(r io.Reader, query string) ([]string, error) {
@@ -31,6 +32,26 @@ func Execute(r io.Reader, query string) (string, error) {
 	return q.String(), nil
 }
 
+func Execute2(r io.Reader, query string) (string, error) {
+	q, err := Parse(query)
+	if err != nil {
+		return "", err
+	}
+	pr, pw := io.Pipe()
+
+	var res bytes.Buffer
+	go io.Copy(&res, pr)
+
+	rs := prepare(r)
+	rs.track = pw
+	if err := rs.Read(q); err != nil {
+		return "", err
+	}
+	pr.Close()
+	pw.Close()
+	return res.String(), nil
+}
+
 func execute(r io.Reader, q Query) error {
 	rs := prepare(r)
 	return rs.Read(q)
@@ -41,15 +62,21 @@ type Position struct {
 	Col  int
 }
 
+func (p Position) Equal(pos Position) bool {
+	return p.Line == pos.Line && p.Col == pos.Col
+}
+
 func (p Position) String() string {
 	return fmt.Sprintf("%d:%d", p.Line, p.Col)
 }
 
 type reader struct {
-	inner  io.RuneScanner
+	inner io.RuneScanner
+	file  string
+	depth int
+
+	track  io.Writer
 	writer io.Writer
-	file   string
-	depth  int
 
 	prev      Position
 	curr      Position
@@ -58,8 +85,10 @@ type reader struct {
 
 func prepare(r io.Reader) *reader {
 	rs := reader{
-		inner: bufio.NewReader(r),
-		file:  "<input>",
+		inner:  bufio.NewReader(r),
+		file:   "<input>",
+		writer: io.Discard,
+		track:  io.Discard,
 	}
 	rs.curr.Line = 1
 	if n, ok := r.(interface{ Name() string }); ok {
@@ -70,8 +99,7 @@ func prepare(r io.Reader) *reader {
 
 func (r *reader) Read(q Query) error {
 	if keepAll(q) {
-		r.wrap()
-		defer r.update(q, "")
+		// TODO
 	}
 	err := r.traverse(q)
 	if err != nil {
@@ -105,120 +133,6 @@ func (r *reader) traverse(q Query) error {
 	return err
 }
 
-func (r *reader) key() (string, error) {
-	c, _ := r.read()
-	if !jsonQuote(c) {
-		return "", r.malformed("key: expected '\"' instead of %c", c)
-	}
-	key, err := r.literal()
-	if err != nil {
-		return "", err
-	}
-	if c, _ = r.read(); c != ':' {
-		return "", r.malformed("key: expected ':' instead of %c", c)
-	}
-	return key, nil
-}
-
-func (r *reader) object(q Query) error {
-	if err := canObject(q); err != nil {
-		return err
-	}
-	r.enter()
-	defer r.leave()
-
-	for {
-		key, err := r.key()
-		if err != nil {
-			return err
-		}
-		if err = r.filter(q, key); err != nil {
-			return err
-		}
-		if err := r.endObject(); err != nil {
-			if isDone(err) {
-				break
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *reader) endObject() error {
-	if c, _ := r.read(); c == '}' {
-		return errDone
-	} else if c == ',' {
-		if c, err := r.read(); c == '}' || err != nil {
-			return r.malformed("object: unexpected character after ','")
-		}
-		r.unread()
-	} else {
-		return r.malformed("object: expected ',' or '}'")
-	}
-	return nil
-}
-
-func (r *reader) array(q Query) error {
-	r.enter()
-	defer r.leave()
-
-	if err := canArray(q); err != nil {
-		return err
-	}
-	for i := 0; ; i++ {
-		err := r.filter(q, strconv.Itoa(i))
-		if err != nil {
-			return err
-		}
-		if err := r.endArray(); err != nil {
-			if isDone(err) {
-				break
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *reader) endArray() error {
-	if c, _ := r.read(); c == ']' {
-		return errDone
-	} else if c == ',' {
-		if c, err := r.read(); c == ']' || err != nil {
-			return r.malformed("array: unexpected character after ','")
-		}
-		r.unread()
-	} else {
-		return r.malformed("array: expected ',' or ']")
-	}
-	return nil
-}
-
-func (r *reader) filter(q Query, key string) error {
-	if q == nil {
-		return r.traverse(q)
-	}
-	next, err := q.Next(key)
-	if err != nil {
-		return r.traverse(next)
-	}
-	if !keepAll(q) && next == nil {
-		r.wrap()
-		defer r.update(q, key)
-	}
-	return r.traverse(next)
-}
-
-func (r *reader) update(q Query, key string) error {
-	str := r.unwrap()
-	err := q.update(str)
-	if err == nil && r.writer != nil {
-		_, err = io.WriteString(r.writer, str)
-	}
-	return err
-}
-
 func (r *reader) literal() (string, error) {
 	r.toggleBlank()
 	defer r.toggleBlank()
@@ -241,10 +155,6 @@ func (r *reader) literal() (string, error) {
 		buf.WriteRune(c)
 	}
 	return buf.String(), nil
-}
-
-func (r *reader) toggleBlank() {
-	r.keepBlank = !r.keepBlank
 }
 
 func (r *reader) escape(buf *bytes.Buffer) error {
@@ -382,12 +292,125 @@ func (r *reader) exponent(buf *bytes.Buffer, exp rune) error {
 	return nil
 }
 
+func (r *reader) key() (string, error) {
+	c, _ := r.read()
+	if !jsonQuote(c) {
+		return "", r.malformed("key: expected '\"' instead of %c", c)
+	}
+	key, err := r.literal()
+	if err != nil {
+		return "", err
+	}
+	if c, _ = r.read(); c != ':' {
+		return "", r.malformed("key: expected ':' instead of %c", c)
+	}
+	return key, nil
+}
+
+func (r *reader) object(q Query) error {
+	if err := canObject(q); err != nil {
+		return err
+	}
+	r.enter()
+	defer r.leave()
+
+	for {
+		key, err := r.key()
+		if err != nil {
+			return err
+		}
+		if err = r.filter(q, key); err != nil {
+			return err
+		}
+		if err := r.endObject(); err != nil {
+			if isDone(err) {
+				break
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *reader) endObject() error {
+	if c, _ := r.read(); c == '}' {
+		return errDone
+	} else if c == ',' {
+		if c, err := r.read(); c == '}' || err != nil {
+			return r.malformed("object: unexpected character after ','")
+		}
+		r.unread()
+	} else {
+		return r.malformed("object: expected ',' or '}'")
+	}
+	return nil
+}
+
+func (r *reader) array(q Query) error {
+	r.enter()
+	defer r.leave()
+
+	if err := canArray(q); err != nil {
+		return err
+	}
+	for i := 0; ; i++ {
+		err := r.filter(q, strconv.Itoa(i))
+		if err != nil {
+			return err
+		}
+		if err := r.endArray(); err != nil {
+			if isDone(err) {
+				break
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *reader) endArray() error {
+	if c, _ := r.read(); c == ']' {
+		return errDone
+	} else if c == ',' {
+		if c, err := r.read(); c == ']' || err != nil {
+			return r.malformed("array: unexpected character after ','")
+		}
+		r.unread()
+	} else {
+		return r.malformed("array: expected ',' or ']")
+	}
+	return nil
+}
+
+func (r *reader) filter(q Query, key string) error {
+	if q == nil {
+		return r.traverse(q)
+	}
+	next, err := q.Next(key)
+	if err != nil {
+		return r.traverse(next)
+	}
+	if !keepAll(q) && next == nil {
+		// TODO
+	}
+	return r.traverse(next)
+}
+
+func (r *reader) toggleBlank() {
+	r.keepBlank = !r.keepBlank
+}
+
 func (r *reader) enter() {
 	r.depth++
 }
 
 func (r *reader) leave() {
 	r.depth--
+}
+
+func (r *reader) unread() {
+	r.inner.UnreadRune()
+	r.curr = r.prev
 }
 
 func (r *reader) read() (rune, error) {
@@ -405,23 +428,6 @@ func (r *reader) read() (rune, error) {
 	}
 }
 
-func (r *reader) unread() {
-	r.inner.UnreadRune()
-}
-
-func (r *reader) wrap() {
-	r.inner = wrap(r.inner)
-}
-
-func (r *reader) unwrap() string {
-	w, ok := r.inner.(unwrapper)
-	if ok {
-		r.inner = w.Unwrap()
-		return w.String()
-	}
-	return ""
-}
-
 func (r *reader) malformed(msg string, args ...interface{}) error {
 	return MalformedError{
 		Position: r.curr,
@@ -437,97 +443,11 @@ func isDone(err error) bool {
 }
 
 func canObject(q Query) error {
-	// if q == nil {
-	// 	return nil
-	// }
-	// switch q.(type) {
-	// case *all, *ident, *any, *object, *array:
-	// 	return nil
-	// default:
-	// 	return invalidQueryForType("object")
-	// }
 	return nil
 }
 
 func canArray(q Query) error {
-	// if q == nil {
-	// 	return nil
-	// }
-	// switch q.(type) {
-	// case *all, *index, *array:
-	// 	return nil
-	// default:
-	// 	return invalidQueryForType("array")
-	// }
 	return nil
-}
-
-type unwrapper interface {
-	fmt.Stringer
-	Unwrap() io.RuneScanner
-}
-
-type compact struct {
-	io.RuneScanner
-
-	last    rune
-	scanstr bool
-	buf     bytes.Buffer
-}
-
-func wrap(rs io.RuneScanner) io.RuneScanner {
-	if _, ok := rs.(*compact); ok {
-		return rs
-	}
-	return &compact{
-		RuneScanner: rs,
-	}
-}
-
-func (w *compact) String() string {
-	return w.buf.String()
-}
-
-func (w *compact) ReadRune() (rune, int, error) {
-	c, z, err := w.RuneScanner.ReadRune()
-	w.toggle(c)
-	if err == nil && w.keep(c) {
-		w.buf.WriteRune(c)
-		if !w.scanstr && jsonSep(c) {
-			w.buf.WriteRune(' ')
-			w.last = c
-		}
-	}
-	return c, z, err
-}
-
-func (w *compact) UnreadRune() error {
-	err := w.RuneScanner.UnreadRune()
-	if err == nil && w.buf.Len() > 0 {
-		var size int
-		if !w.scanstr && jsonSep(w.last) {
-			size++
-		}
-		size++
-		w.buf.Truncate(w.buf.Len() - size)
-		w.toggle(w.last)
-	}
-	return err
-}
-
-func (w *compact) Unwrap() io.RuneScanner {
-	return w.RuneScanner
-}
-
-func (w *compact) keep(c rune) bool {
-	return !jsonBlank(c) || w.scanstr
-}
-
-func (w *compact) toggle(c rune) {
-	if c == '"' && w.last != '\\' {
-		w.scanstr = !w.scanstr
-	}
-	w.last = c
 }
 
 func jsonSep(r rune) bool {
