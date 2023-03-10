@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	// "unicode/utf8"
+	"sync"
+	"unicode/utf8"
 )
 
 func Filter(r io.Reader, query string) ([]string, error) {
@@ -39,16 +40,25 @@ func Execute2(r io.Reader, query string) (string, error) {
 	}
 	pr, pw := io.Pipe()
 
-	var res bytes.Buffer
-	go io.Copy(&res, pr)
+	var (
+		res bytes.Buffer
+		wg  sync.WaitGroup
+	)
+	go func() {
+		defer wg.Done()
+		wg.Add(1)
+		io.Copy(&res, pr)
+	}()
 
 	rs := prepare(r)
-	rs.track = pw
+	rs.writer = writeTo(pw)
 	if err := rs.Read(q); err != nil {
 		return "", err
 	}
+	rs.writer.flush()
 	pr.Close()
 	pw.Close()
+	wg.Wait()
 	return res.String(), nil
 }
 
@@ -75,8 +85,7 @@ type reader struct {
 	file  string
 	depth int
 
-	track  io.Writer
-	writer io.Writer
+	writer *writer
 
 	prev      Position
 	curr      Position
@@ -85,10 +94,8 @@ type reader struct {
 
 func prepare(r io.Reader) *reader {
 	rs := reader{
-		inner:  bufio.NewReader(r),
-		file:   "<input>",
-		writer: io.Discard,
-		track:  io.Discard,
+		inner: bufio.NewReader(r),
+		file:  "<input>",
 	}
 	rs.curr.Line = 1
 	if n, ok := r.(interface{ Name() string }); ok {
@@ -391,7 +398,8 @@ func (r *reader) filter(q Query, key string) error {
 		return r.traverse(next)
 	}
 	if !keepAll(q) && next == nil {
-		// TODO
+		r.writer.toggle()
+		defer r.writer.toggle()
 	}
 	return r.traverse(next)
 }
@@ -410,6 +418,7 @@ func (r *reader) leave() {
 
 func (r *reader) unread() {
 	r.inner.UnreadRune()
+	r.writer.unwriteRune()
 	r.curr = r.prev
 }
 
@@ -423,6 +432,7 @@ func (r *reader) read() (rune, error) {
 		}
 		r.curr.Col++
 		if r.keepBlank || !jsonBlank(c) {
+			r.writer.writeRune(c)
 			return c, err
 		}
 	}
@@ -434,6 +444,55 @@ func (r *reader) malformed(msg string, args ...interface{}) error {
 		File:     r.file,
 		Message:  fmt.Sprintf(msg, args...),
 	}
+}
+
+type writer struct {
+	inner  io.Writer
+	writer io.Writer
+	buf    []byte
+	ptr    int
+}
+
+func writeTo(w io.Writer) *writer {
+	return &writer{
+		inner:  io.Discard,
+		writer: w,
+		buf:    make([]byte, 4096),
+	}
+}
+
+func (w *writer) writeRune(r rune) {
+	z := utf8.RuneLen(r)
+	if w.ptr+z >= len(w.buf) {
+		w.flush()
+	}
+	utf8.EncodeRune(w.buf[w.ptr:], r)
+	w.ptr += z
+}
+
+func (w *writer) unwriteRune() {
+	if w.ptr == 0 {
+		return
+	}
+	_, z := utf8.DecodeLastRune(w.buf[:w.ptr])
+	w.ptr -= z
+}
+
+func (w *writer) toggle() {
+	w.flush()
+	if w.inner == io.Discard {
+		w.inner = w.writer
+	} else {
+		w.inner = io.Discard
+	}
+}
+
+func (w *writer) flush() {
+	if w.ptr <= 0 {
+		return
+	}
+	w.inner.Write(w.buf[:w.ptr])
+	w.ptr = 0
 }
 
 var errDone = errors.New("done")
