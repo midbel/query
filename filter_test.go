@@ -5,12 +5,24 @@ import (
 	"testing"
 )
 
-func TestFilter(t *testing.T) {
-	queries := []struct {
-		Input string
-		Query string
-		Want  string
-	}{
+type QueryCase struct {
+	Input string
+	Query string
+	Want  string
+}
+
+func TestExecute(t *testing.T) {
+	t.Run("identity", testIdentity)
+	t.Run("identifier", testIdentifier)
+	t.Run("index", testIndex)
+	t.Run("any", testAny)
+	t.Run("object", testObject)
+	t.Run("array", testArray)
+	t.Run("pipeline", testPipeline)
+}
+
+func testIdentity(t *testing.T) {
+	queries := []QueryCase{
 		{
 			Input: `"foobar"`,
 			Query: `.`,
@@ -29,42 +41,34 @@ func TestFilter(t *testing.T) {
 		{
 			Input: `{"user": "foo bar"}`,
 			Query: `.`,
-			Want:  `{"user": "foo bar"}`,
+			Want:  `{"user":"foo bar"}`,
 		},
-		{
-			Input: `{"user": "foo bar"}`,
-			Query: `. | .user`,
-			Want:  `"foo bar"`,
-		},
+	}
+	testQueries(t, queries)
+}
+
+func testIdentifier(t *testing.T) {
+	queries := []QueryCase{
 		{
 			Input: `{"user": "foobar", "number": 42}`,
 			Query: `.user`,
 			Want:  `"foobar"`,
 		},
 		{
-			Input: `{"user": "foobar", "number": 42}`,
-			Query: `{.user,age:42}`,
-			Want:  `{"user": "foobar", "age": 42}`,
-		},
-		{
 			Input: `{"user": {"name": "foobar", "age": 42, "active": true}}`,
 			Query: `.user`,
 			Want:  `{"name": "foobar", "age": 42, "active": true}`,
 		},
+	}
+	testQueries(t, queries)
+}
+
+func testIndex(t *testing.T) {
+	queries := []QueryCase{
 		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
 			Query: `.[]`,
 			Want:  `[{"user": "foo"}, {"user": "bar"}]`,
-		},
-		{
-			Input: `[{"user": "foo"}, {"user": "bar"}]`,
-			Query: `.[] | {.user, age:42}`,
-			Want:  `[{"user": "foo", "age": 42}, {"user": "bar", "age": 42}]`,
-		},
-		{
-			Input: `["foo", "bar"]`,
-			Query: `[42, .[]]`,
-			Want:  `[42, "foo", "bar"]`,
 		},
 		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
@@ -77,11 +81,6 @@ func TestFilter(t *testing.T) {
 			Want:  `{"user": "foo"}`,
 		},
 		{
-			Input: `{"user": "foobar", "number": 42, "active": false}`,
-			Query: `.user,.active`,
-			Want:  `["foobar", false]`,
-		},
-		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
 			Query: `.[].user`,
 			Want:  `["foo", "bar"]`,
@@ -90,6 +89,33 @@ func TestFilter(t *testing.T) {
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
 			Query: `.[0].user`,
 			Want:  `"foo"`,
+		},
+	}
+	testQueries(t, queries)
+}
+
+func testArray(t *testing.T) {
+	queries := []QueryCase{
+		{
+			Input: `{"user": "foobar", "scores":[0.5,10.1,9]}`,
+			Query: `[.user, .scores[]]`,
+			Want:  `["foobar", 0.5, 10.1, 9]`,
+		},
+		{
+			Input: `["foo", "bar"]`,
+			Query: `[42, .[]]`,
+			Want:  `[42, "foo", "bar"]`,
+		},
+	}
+	testQueries(t, queries)
+}
+
+func testObject(t *testing.T) {
+	queries := []QueryCase{
+		{
+			Input: `{"user": "foobar", "number": 42}`,
+			Query: `{.user,age:42}`,
+			Want:  `{"user": "foobar", "age": 42}`,
 		},
 		{
 			Input: `{"user": "foobar", "score": 42}`,
@@ -102,14 +128,36 @@ func TestFilter(t *testing.T) {
 			Want:  `[{"user": "foobar", "score": 0.5}, {"user": "foobar", "score": 10.1}, {"user": "foobar", "score": 9}]`,
 		},
 		{
-			Input: `{"user": "foobar", "scores":[0.5,10.1,9]}`,
-			Query: `[.user, .scores[]]`,
-			Want:  `["foobar", 0.5, 10.1, 9]`,
-		},
-		{
 			Input: `{"user": "foobar", "scores": [{"name": "programming", "result": 0}, {"name": "testing", "result": 10}]}`,
 			Query: `{.user, courses: [.scores[].name]}`,
 			Want:  `{"user": "foobar", "courses": ["programming", "testing"]}`,
+		},
+	}
+	testQueries(t, queries)
+}
+
+func testAny(t *testing.T) {
+	queries := []QueryCase{
+		{
+			Input: `{"user": "foobar", "number": 42, "active": false}`,
+			Query: `.user,.active`,
+			Want:  `["foobar", false]`,
+		},
+	}
+	testQueries(t, queries)
+}
+
+func testPipeline(t *testing.T) {
+	queries := []QueryCase{
+		{
+			Input: `{"user": "foo bar"}`,
+			Query: `. | .user`,
+			Want:  `"foo bar"`,
+		},
+		{
+			Input: `[{"user": "foo"}, {"user": "bar"}]`,
+			Query: `.[] | {.user, age:42}`,
+			Want:  `[{"user": "foo", "age": 42}, {"user": "bar", "age": 42}]`,
 		},
 		{
 			Input: `{"user": {"name": "foo bar", "score": 42}}`,
@@ -127,6 +175,11 @@ func TestFilter(t *testing.T) {
 			Want:  `42`,
 		},
 	}
+	testQueries(t, queries)
+}
+
+func testQueries(t *testing.T, queries []QueryCase) {
+	t.Helper()
 	for _, q := range queries {
 		got, err := Execute(strings.NewReader(q.Input), q.Query)
 		if err != nil {

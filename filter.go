@@ -42,7 +42,7 @@ func execute(r io.Reader, q Query) (string, error) {
 			pr.Close()
 			pw.Close()
 		}()
-		errch <- prepare(r, pw).Read(q)
+		errch <- readFrom(r, pw).Read(q)
 	}()
 	wg.Wait()
 	return <-strch, <-errch
@@ -53,27 +53,23 @@ type Position struct {
 	Col  int
 }
 
-func (p Position) Equal(pos Position) bool {
-	return p.Line == pos.Line && p.Col == pos.Col
-}
-
 func (p Position) String() string {
 	return fmt.Sprintf("%d:%d", p.Line, p.Col)
 }
 
 type reader struct {
-	inner io.RuneScanner
+	inner  io.RuneScanner
+	writer *writer
+
 	file  string
 	depth int
-
-	writer *writer
 
 	prev      Position
 	curr      Position
 	keepBlank bool
 }
 
-func prepare(r io.Reader, w io.Writer) *reader {
+func readFrom(r io.Reader, w io.Writer) *reader {
 	rs := reader{
 		inner:  bufio.NewReader(r),
 		file:   "<input>",
@@ -487,8 +483,11 @@ func (w *writer) flush() {
 		return
 	}
 	w.inner.Write(w.buf[:w.ptr-z])
-	utf8.EncodeRune(w.buf, r)
-	w.ptr = z
+	w.ptr = 0
+	if r != 0 {
+		utf8.EncodeRune(w.buf, r)
+		w.ptr = z
+	}
 }
 
 var errDone = errors.New("done")
