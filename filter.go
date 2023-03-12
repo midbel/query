@@ -16,28 +16,25 @@ func Execute(r io.Reader, query string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := execute(r, q); err != nil {
-		return "", err
-	}
-	return q.String(), nil
+	return execute(r, q)
 }
 
-func Execute2(r io.Reader, query string) (string, error) {
-	q, err := Parse(query)
-	if err != nil {
-		return "", err
-	}
-	pr, pw := io.Pipe()
-
+func execute(r io.Reader, q Query) (string, error) {
 	var (
-		res bytes.Buffer
-		wg  sync.WaitGroup
+		pr, pw = io.Pipe()
+		errch  = make(chan error, 1)
+		strch  = make(chan string, 1)
+		wg     sync.WaitGroup
 	)
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var res bytes.Buffer
 		io.Copy(&res, pr)
+		strch <- res.String()
 	}()
+
 	wg.Add(1)
 	go func() {
 		defer func() {
@@ -45,18 +42,10 @@ func Execute2(r io.Reader, query string) (string, error) {
 			pr.Close()
 			pw.Close()
 		}()
-
-		rs := prepare(r, pw)
-		err := rs.Read(q)
-		_ = err
+		errch <- prepare(r, pw).Read(q)
 	}()
 	wg.Wait()
-	return res.String(), nil
-}
-
-func execute(r io.Reader, q Query) error {
-	rs := prepare(r, io.Discard)
-	return rs.Read(q)
+	return <-strch, <-errch
 }
 
 type Position struct {

@@ -23,12 +23,10 @@ func main() {
 		}
 	}
 
-	list, err := query.Filter(r, flag.Arg(0))
+	str, err := query.Execute(r, flag.Arg(0))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(3)
 	}
-	for _, i := range list {
-		fmt.Println(i)
-	}
+	fmt.Println(str)
 }
