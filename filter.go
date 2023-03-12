@@ -107,9 +107,9 @@ func (r *reader) traverse(q Query) error {
 	case jsonQuote(c):
 		_, err = r.literal()
 	case jsonIdent(c):
-		_, err = r.identifier()
+		err = r.identifier()
 	case jsonDigit(c):
-		_, err = r.number()
+		err = r.number()
 	case jsonArray(c):
 		err = r.array(q)
 	case jsonObject(c):
@@ -164,7 +164,7 @@ func (r *reader) escape(buf *bytes.Buffer) error {
 	return nil
 }
 
-func (r *reader) identifier() (interface{}, error) {
+func (r *reader) identifier() error {
 	defer r.unread()
 	r.unread()
 
@@ -175,7 +175,7 @@ func (r *reader) identifier() (interface{}, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, err
+			return err
 		}
 		if !jsonLetter(c) {
 			break
@@ -184,32 +184,25 @@ func (r *reader) identifier() (interface{}, error) {
 	}
 	switch ident := buf.String(); ident {
 	case "true":
-		return true, nil
 	case "false":
-		return false, nil
 	case "null":
-		return nil, nil
 	default:
-		return "", r.malformed("%s: identifier not recognized", ident)
+		return r.malformed("%s: identifier not recognized", ident)
 	}
+	return nil
 }
 
-func (r *reader) number() (string, error) {
-	var (
-		buf bytes.Buffer
-		err error
-	)
+func (r *reader) number() error {
+	var err error
 	r.unread()
 	if c, _ := r.read(); c == '0' {
-		buf.WriteRune(c)
 		if c, _ = r.read(); c == '.' {
-			err := r.fraction(&buf)
-			return buf.String(), err
+			return r.fraction()
 		} else if jsonBlank(c) || c == ',' || c == '}' || c == ']' {
 			r.unread()
-			return buf.String(), nil
+			return nil
 		}
-		return "", r.malformed("expected fraction after 0")
+		return r.malformed("expected fraction after 0")
 	}
 	r.unread()
 	for {
@@ -217,64 +210,54 @@ func (r *reader) number() (string, error) {
 		if !jsonDigit(c) {
 			break
 		}
-		buf.WriteRune(c)
 	}
 	r.unread()
 	switch c, _ := r.read(); c {
 	case '.':
-		err = r.fraction(&buf)
+		err = r.fraction()
 	case 'e', 'E':
-		err = r.exponent(&buf, c)
+		err = r.exponent()
 	default:
 		r.unread()
 	}
-	if err != nil {
-		return "", err
-	}
-	return buf.String(), nil
+	return err
 }
 
-func (r *reader) fraction(buf *bytes.Buffer) error {
+func (r *reader) fraction() error {
 	if c, _ := r.read(); !jsonDigit(c) {
 		return r.malformed("expected digit after '.'")
 	}
 	r.unread()
 
 	defer r.unread()
-	buf.WriteRune('.')
 	for {
 		c, _ := r.read()
 		if !jsonDigit(c) {
 			break
 		}
-		buf.WriteRune(c)
 	}
 	r.unread()
 	if c, _ := r.read(); c == 'e' || c == 'E' {
-		return r.exponent(buf, c)
+		return r.exponent()
 	}
 	return nil
 }
 
-func (r *reader) exponent(buf *bytes.Buffer, exp rune) error {
+func (r *reader) exponent() error {
 	defer r.unread()
 
-	buf.WriteRune(exp)
 	c, _ := r.read()
 	if c == '-' || c == '+' {
-		buf.WriteRune(c)
 		c, _ = r.read()
 	}
 	if !jsonDigit(c) || c == '0' {
 		return r.malformed("expected digit (different of 0) after exponent")
 	}
-	buf.WriteRune(c)
 	for {
 		c, _ := r.read()
 		if !jsonDigit(c) {
 			break
 		}
-		buf.WriteRune(c)
 	}
 	return nil
 }
@@ -428,9 +411,11 @@ func (r *reader) malformed(msg string, args ...interface{}) error {
 
 type writer struct {
 	discard bool
-	inner   io.Writer
-	buf     []byte
-	ptr     int
+
+	inner    io.Writer
+	buf      []byte
+	ptr      int
+	wipeable bool
 }
 
 func writeTo(w io.Writer) *writer {
@@ -451,14 +436,19 @@ func (w *writer) writeRune(r rune) {
 	}
 	utf8.EncodeRune(w.buf[w.ptr:], r)
 	w.ptr += z
+	w.wipeable = true
 }
 
 func (w *writer) unwriteRune() {
+	if !w.wipeable {
+		return
+	}
 	if w.discard || w.ptr == 0 {
 		return
 	}
 	_, z := utf8.DecodeLastRune(w.buf[:w.ptr])
 	w.ptr -= z
+	w.wipeable = false
 }
 
 func (w *writer) toggle() {

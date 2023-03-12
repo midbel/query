@@ -57,7 +57,7 @@ func testIdentifier(t *testing.T) {
 		{
 			Input: `{"user": {"name": "foobar", "age": 42, "active": true}}`,
 			Query: `.user`,
-			Want:  `{"name": "foobar", "age": 42, "active": true}`,
+			Want:  `{"name":"foobar","age":42,"active":true}`,
 		},
 	}
 	testQueries(t, queries)
@@ -78,7 +78,7 @@ func testIndex(t *testing.T) {
 		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
 			Query: `.[0]`,
-			Want:  `{"user": "foo"}`,
+			Want:  `{"user":"foo"}`,
 		},
 		{
 			Input: `[{"user": "foo"}, {"user": "bar"}]`,
