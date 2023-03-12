@@ -11,17 +11,6 @@ import (
 	"unicode/utf8"
 )
 
-func Filter(r io.Reader, query string) ([]string, error) {
-	q, err := Parse(query)
-	if err != nil {
-		return nil, err
-	}
-	if err := execute(r, q); err != nil {
-		return nil, err
-	}
-	return q.Get(), nil
-}
-
 func Execute(r io.Reader, query string) (string, error) {
 	q, err := Parse(query)
 	if err != nil {
@@ -44,26 +33,29 @@ func Execute2(r io.Reader, query string) (string, error) {
 		res bytes.Buffer
 		wg  sync.WaitGroup
 	)
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		wg.Add(1)
 		io.Copy(&res, pr)
 	}()
+	wg.Add(1)
+	go func() {
+		defer func() {
+			wg.Done()
+			pr.Close()
+			pw.Close()
+		}()
 
-	rs := prepare(r)
-	rs.writer = writeTo(pw)
-	if err := rs.Read(q); err != nil {
-		return "", err
-	}
-	rs.writer.flush()
-	pr.Close()
-	pw.Close()
+		rs := prepare(r, pw)
+		err := rs.Read(q)
+		_ = err
+	}()
 	wg.Wait()
 	return res.String(), nil
 }
 
 func execute(r io.Reader, q Query) error {
-	rs := prepare(r)
+	rs := prepare(r, io.Discard)
 	return rs.Read(q)
 }
 
@@ -92,10 +84,11 @@ type reader struct {
 	keepBlank bool
 }
 
-func prepare(r io.Reader) *reader {
+func prepare(r io.Reader, w io.Writer) *reader {
 	rs := reader{
-		inner: bufio.NewReader(r),
-		file:  "<input>",
+		inner:  bufio.NewReader(r),
+		file:   "<input>",
+		writer: writeTo(w),
 	}
 	rs.curr.Line = 1
 	if n, ok := r.(interface{ Name() string }); ok {
@@ -105,8 +98,10 @@ func prepare(r io.Reader) *reader {
 }
 
 func (r *reader) Read(q Query) error {
+	defer r.writer.close()
 	if keepAll(q) {
-		// TODO
+		r.writer.toggle()
+		defer r.writer.toggle()
 	}
 	err := r.traverse(q)
 	if err != nil {
@@ -447,21 +442,24 @@ func (r *reader) malformed(msg string, args ...interface{}) error {
 }
 
 type writer struct {
-	inner  io.Writer
-	writer io.Writer
-	buf    []byte
-	ptr    int
+	discard bool
+	inner   io.Writer
+	buf     []byte
+	ptr     int
 }
 
 func writeTo(w io.Writer) *writer {
 	return &writer{
-		inner:  io.Discard,
-		writer: w,
-		buf:    make([]byte, 4096),
+		discard: true,
+		inner:   w,
+		buf:     make([]byte, 4096),
 	}
 }
 
 func (w *writer) writeRune(r rune) {
+	if w.discard {
+		return
+	}
 	z := utf8.RuneLen(r)
 	if w.ptr+z >= len(w.buf) {
 		w.flush()
@@ -471,7 +469,7 @@ func (w *writer) writeRune(r rune) {
 }
 
 func (w *writer) unwriteRune() {
-	if w.ptr == 0 {
+	if w.discard || w.ptr == 0 {
 		return
 	}
 	_, z := utf8.DecodeLastRune(w.buf[:w.ptr])
@@ -480,19 +478,28 @@ func (w *writer) unwriteRune() {
 
 func (w *writer) toggle() {
 	w.flush()
-	if w.inner == io.Discard {
-		w.inner = w.writer
-	} else {
-		w.inner = io.Discard
-	}
+	w.discard = !w.discard
 }
 
-func (w *writer) flush() {
-	if w.ptr <= 0 {
+func (w *writer) close() {
+	w.flush()
+	if w.ptr == 0 {
 		return
 	}
 	w.inner.Write(w.buf[:w.ptr])
-	w.ptr = 0
+}
+
+func (w *writer) flush() {
+	if w.ptr <= 0 || w.discard {
+		return
+	}
+	r, z := utf8.DecodeLastRune(w.buf[:w.ptr])
+	if r == utf8.RuneError {
+		return
+	}
+	w.inner.Write(w.buf[:w.ptr-z])
+	utf8.EncodeRune(w.buf, r)
+	w.ptr = z
 }
 
 var errDone = errors.New("done")
